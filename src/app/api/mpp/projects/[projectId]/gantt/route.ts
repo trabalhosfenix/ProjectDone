@@ -1,0 +1,16 @@
+import { NextResponse } from 'next/server'
+import { getMppGantt } from '@/lib/mpp-api'
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
+  try {
+    const { projectId } = await params
+    const data = await getMppGantt(projectId)
+    return NextResponse.json(data)
+  } catch (error) {
+    console.error('Erro ao buscar gantt da MPP API:', error)
+    return NextResponse.json({ error: 'Falha ao buscar dados de Gantt no backend MPP' }, { status: 500 })
+  }
+}
