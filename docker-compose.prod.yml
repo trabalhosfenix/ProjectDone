@@ -1,0 +1,63 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:  # ← ADICIONE ESTA SEÇÃO
+        - DATABASE_URL=postgresql://admin:projectdone2025@db:5432/projectdone?schema=public
+    container_name: projectdone-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://admin:projectdone2025@db:5432/projectdone?schema=public
+      - NEXTAUTH_SECRET=ponto_de_criacao_secret_2025
+      - NEXTAUTH_URL=https://projectdone.com.br
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - projectdone-net
+
+  caddy:
+    image: caddy:latest
+    container_name: projectdone-proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    networks:
+      - projectdone-net
+
+  db:
+    image: postgres:16-alpine
+    container_name: projectdone-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - projectdone-net
+
+networks:
+  projectdone-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
