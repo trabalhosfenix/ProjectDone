@@ -1,12 +1,15 @@
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
 import { ProjectRisksList } from '@/components/project/project-risks-list'
-import { getProjectRisks } from '@/app/actions/project-risks'
+import { getProjectRisks, getProjectRiskDashboard } from '@/app/actions/project-risks'
 import { ProjectPageHeader } from '@/components/project/project-page-header'
 
 export default async function RiscosPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const { data: risks } = await getProjectRisks(id)
+  const [{ data: risks }, { data: dashboard }] = await Promise.all([
+    getProjectRisks(id),
+    getProjectRiskDashboard(id),
+  ])
 
   return (
     <div className="h-full bg-gray-50 flex flex-col">
@@ -20,7 +23,7 @@ export default async function RiscosPage({ params }: { params: Promise<{ id: str
           projectId={id}
         />
 
-        <ProjectRisksList projectId={id} risks={risks || []} />
+        <ProjectRisksList projectId={id} risks={risks || []} dashboard={dashboard} />
       </div>
     </div>
   )
