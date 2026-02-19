@@ -1,0 +1,669 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")  // Isso ainda funciona no Prisma 7
+}
+
+model User {
+  id                  String   @id @default(uuid())
+  email               String   @unique
+  password            String
+  name                String?
+  role                String   @default("USER") // Mantido para compatibilidade inicial
+  roleId              String?  // Relacionamento com a nova tabela de permissões
+  userRole            Role?    @relation(fields: [roleId], references: [id])
+  
+  // Novos campos "Nova Pessoa"
+  code                String?
+  organization        String?
+  area                String?
+  jobTitle            String?  // Cargo
+  functionalManager   String?  // Superior Funcional
+  phone               String?  // Telefones
+  notes               String?  // Observações @db.Text
+  
+  // Financeiro / Alocação
+  defaultCost         Float?   @default(0) // Custo padrão por hora
+  defaultRevenue      Float?   @default(0) // Receita padrão por hora
+  workHours           Float?   @default(8) // Horas por dia
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  // Relacionamentos
+  createdProjects     Project[]        @relation("ProjectCreator")
+  publishedRecords    ProjectRecord[]  @relation("RecordPublisher")
+  executedRecords     ProjectRecord[]  @relation("RecordExecutor")
+  createdIssues       Issue[]          @relation("IssueCreator")
+  issueMembers        IssueMember[]
+  issueComments       IssueComment[]
+  projectMembers      ProjectMember[]  // Projetos em que participa
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // Ex: "Gerente de Projetos", "Cliente VIP"
+  permissions Json     // Estrutura: { "dashboard": true, "kanban": false, "canEdit": true, etc }
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Projeto = Container que agrupa tarefas, documentos, pessoas, etc.
+model Project {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?  @db.Text
+  code            String?  @unique // Código do projeto (ex: PROJ-2025-001)
+  
+  // Status e Tipo
+  status          String   @default("A iniciar") // A iniciar, Andamento, Concluído, Parado, etc.
+  type            String?  // Implementação, Pesquisa, Manutenção, etc.
+  
+  // Planejamento Detalhado
+  justification   String?  @db.Text // Justificativa do projeto
+  objective       String?  @db.Text // Objetivo do projeto
+  assumptions     String?  @db.Text // Premissas
+  constraints     String?  @db.Text // Restrições
+  strategicWeight Int?     @default(0) // Peso estratégico
+  calendar        String?  @default("Somente 2ª a 6ª") // Depreciado - Usar workCalendar
+  workCalendarId  String?
+  workCalendar    WorkCalendar? @relation(fields: [workCalendarId], references: [id])
+  
+  // Datas PREVISTAS
+  startDate       DateTime?
+  endDate         DateTime? // Fim previsto
+  duration        Int?      // Duração prevista em dias
+  
+  // Datas BASE (baseline)
+  baseStartDate   DateTime?
+  baseEndDate     DateTime?
+  baseDuration    Int?      // Duração base em dias
+  
+  // Datas REAIS
+  realStartDate   DateTime?
+  realEndDate     DateTime? // Fim real
+  realDuration    Int?      // Duração real em dias
+  
+  // Organização
+  area            String?  // Área executora
+  program         String?  // Programa ao qual pertence
+  portfolio       String?  // Portfólio
+  strategicPlan   String?  // Plano estratégico
+  
+  // Responsabilidade
+  managerId       String?  // ID do gerente/responsável
+  managerName     String?  // Nome do gerente (backup)
+  client          String?  // Cliente
+  
+  // Financeiro PREVISTO
+  budget          Float?   @default(0) // Orçamento previsto
+  plannedRevenue  Float?   @default(0) // Receita prevista
+  plannedProfit   Float?   @default(0) // Lucro previsto
+  
+  // Financeiro BASE (baseline)
+  baseBudget      Float?   @default(0)
+  baseRevenue     Float?   @default(0)
+  baseProfit      Float?   @default(0)
+  
+  // Financeiro REAL
+  actualCost      Float?   @default(0) // Custo real
+  actualRevenue   Float?   @default(0) // Receita real
+  actualProfit    Float?   @default(0) // Lucro real
+  
+  // Esforço (em horas)
+  baseEffort      Int?     @default(0) // Esforço base
+  plannedEffort   Int?     @default(0) // Esforço previsto
+  actualEffort    Int?     @default(0) // Esforço realizado
+  
+  // Performance
+  progress        Float?   @default(0) // 0-100%
+  
+  // Priorização
+  priority        String?  @default("Média") // Baixa, Média, Alta
+  impactScore     Int?     @default(1) // 1-5
+  complexityScore Int?     @default(1) // 1-5
+  
+  // Metadados flexíveis
+  metadata        Json?
+  
+  // Controle
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdById     String?
+  
+  // Relacionamentos
+  items           ProjectItem[]        // Tarefas/componentes do projeto
+  createdBy       User?                @relation("ProjectCreator", fields: [createdById], references: [id])
+  records         ProjectRecord[]      // Registros do projeto
+  dependencies    ProjectDependency[]  @relation("ProjectDependencies")
+  dependentOn     ProjectDependency[]  @relation("DependentProjects")
+  issues          Issue[]              // Questões do projeto
+  
+  @@index([status])
+  @@index([area])
+  @@index([managerId])
+  @@index([createdById])
+
+  members         ProjectMember[]      // Membros do projeto
+  risks           ProjectRisk[]        // Riscos do projeto
+  goals           ProjectGoal[]        // Metas de qualidade
+  goalTypes       ProjectGoalType[]    // Tipos de Metas Configurados
+  testScenarios   TestScenario[]       // Cenários de Teste Integrado
+  documents       ProjectDocument[]    // Documentos do projeto
+  cutoverTasks    CutoverTask[]        // Tarefas do Plano de Cutover
+}
+
+// Riscos do Projeto
+model ProjectRisk {
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  description   String   // O risco em si
+  type          String   // Ameaça / Oportunidade
+  category      String?  // Técnico, Gerencial, Externo, Comercial
+  
+  // Detalhes do Risco (novos campos do slide)
+  causes        String?  @db.Text // Causas do risco
+  consequences  String?  @db.Text // Consequências se ocorrer
+  contingency   String?  @db.Text // Plano de contingência
+  
+  // Análise
+  probability   Int      @default(1) // 1-5 (Baixa a Muito Alta)
+  impact        Int      @default(1) // 1-5 (Baixa a Muito Alta)
+  severity      Int      @default(1) // Calculado (prob * impact)
+  
+  // Resposta
+  responseStrategy String? // Aceitar, Mitigar, Transferir, Evitar
+  responsePlan     String?  @db.Text // Plano de ação / Resposta detalhada
+  
+  // Status
+  status        String   @default("Ativo") // Ativo, Monitorado, Fechado, Ocorreu
+  
+  owner         String?  // Nome do responsável pelo risco
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([projectId])
+  @@index([severity])
+  @@index([status])
+}
+
+// Tipos de Metas Configuráveis
+model ProjectGoalType {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  name        String   // "Financeira", "Qualidade"
+  dataType    String   // "Valor Monetário", "Percentual", "Data", "Quantidade Numérica"
+  unit        String?  // "R$", "%"
+  
+  goals       ProjectGoal[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+// Metas de Qualidade do Projeto
+model ProjectGoal {
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  name          String   // Nome da meta (KPI)
+  description   String?  @db.Text
+  metric        String?  // Unidade de medida (%, dias, R$, etc.) - Pode vir do Type agora
+  targetValue   Float?   // Valor alvo
+  currentValue  Float?   @default(0) // Valor atual
+  weight        Float?   @default(1) // Peso da meta no cálculo geral
+  
+  // Metas de Qualidade -> Metas (Refinado)
+  expectedResult     String?  @db.Text
+  strategicObjective String?
+  verificationMethod String?
+  category           String?  // Mantido para compatibilidade ou texto livre
+  
+  // Novos campos
+  context            String?  @db.Text // Contexto (premissas/suposições/restrições)
+  
+  typeId             String?
+  projectGoalType    ProjectGoalType? @relation(fields: [typeId], references: [id])
+
+  status        String   @default("Em andamento") // Em andamento, Atingida, Não atingida
+  dueDate       DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([projectId])
+  @@index([status])
+  @@index([typeId])
+}
+
+// Documentos do Projeto
+model ProjectDocument {
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  name          String
+  description   String?
+  type          String   // PDF, Excel, Word, Imagem, Link
+  url           String   // URL do arquivo ou link externo
+  category      String?  // Contrato, Especificação, Evidência, Ata, Relatório
+  size          Int?     // Tamanho em bytes (se aplicável)
+  
+  uploadedById  String?
+  uploadedByName String? // Backup do nome
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([projectId])
+  @@index([category])
+}
+
+// Membros do Projeto (Envolvidos)
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  
+  role      String   // Ex: "Gerente", "Equipe", "Stakeholder", "Patrocinador"
+  effort    Int?     @default(0) // Esforço alocado (horas)
+  cost      Float?   @default(0) // Custo hora
+  revenue   Float?   @default(0) // Receita hora
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+}
+
+// Tabela única para armazenar todos os itens (TNV, Outbound, Inbound)
+// Motivo: Estrutura muito similar, facilita filtros e dashboard unificado.
+model ProjectItem {
+  id             String   @id @default(uuid())
+  externalId     String?  @unique // ID original do Excel para evitar duplicatas
+  wbs            String?  // Código EDT/EAP (ex: 1.1, 1.1.1)
+  originSheet    String   // "TNV", "OUTBOUND", "INBOUND", "CRONOGRAMA_IMPORT"
+  
+  // Relacionamento com Projeto
+  projectId      String?
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // Campos comuns
+  scenario       String?  // Cenário
+  task           String?  // Tarefa
+  responsible    String?  // Responsável
+  status         String?  // Status (Editável)
+  priority       String?  @default("Média") // Baixa, Média, Alta
+  perspective    String?  @default("Geral") // Mercados e Clientes, Aprendizado e Crescimento, Financeira
+  
+  isCritical     Boolean  @default(false)   // Atividade crítica
+  
+  // Performance (SPI/CPI)
+  weight         Float?   @default(1.0)   // Peso da tarefa no projeto
+  plannedValue   Float?   @default(0)     // Valor Planejado (PV) - Orçamento
+  actualCost     Float?   @default(0)     // Custo Real (AC)
+  
+  // Datas
+  datePlanned    DateTime? // Início Previsto
+  datePlannedEnd DateTime? // Término Previsto
+  dateActualStart DateTime? // Início Real
+  dateActual     DateTime? // Término Real (Conclusão)
+  duration       Float?    // Duração em dias
+  
+  // Campos extras flexíveis (JSON para colunas que variam)
+  metadata       Json?    
+  
+  // Controle
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relacionamentos
+  logs           AuditLog[]
+  comments       Comment[]
+  documents      Document[]
+
+  // Dependências entre tarefas
+  predecessors   ProjectItem[] @relation("ItemDependencies")
+  successors     ProjectItem[] @relation("ItemDependencies")
+
+  @@index([originSheet])
+  @@index([status])
+  @@index([responsible])
+  @@index([projectId])
+}
+
+model AuditLog {
+  id            String      @id @default(uuid())
+  projectItemId String
+  projectItem   ProjectItem @relation(fields: [projectItemId], references: [id], onDelete: Cascade)
+  userId        String?
+  userName      String?     // Backup do nome caso o user seja deletado
+  field         String      // Ex: "status", "dateActual"
+  oldValue      String?
+  newValue      String?
+  createdAt     DateTime    @default(now())
+
+  @@index([projectItemId])
+}
+
+model Comment {
+  id            String      @id @default(uuid())
+  projectItemId String
+  projectItem   ProjectItem @relation(fields: [projectItemId], references: [id], onDelete: Cascade)
+  userId        String
+  userName      String
+  content       String      @db.Text
+  createdAt     DateTime    @default(now())
+
+  @@index([projectItemId])
+}
+
+// Tabela auxiliar de Status permitidos (para o dropdown)
+model StatusOption {
+  id        Int     @id @default(autoincrement())
+  label     String  @unique // Ex: "Keyuser - Concluído"
+  color     String? // Ex: "#10b981" (Verde)
+  isFinal   Boolean @default(false) // Se conta como 100% na Curva S
+}
+
+model ProjectCanvas {
+  id            String   @id @default(cuid())
+  projectName   String   @unique // O nome do projeto ou originSheet
+  justification String?  @db.Text
+  objectives    String?  @db.Text
+  benefits      String?  @db.Text
+  product       String?  @db.Text
+  requirements  String?  @db.Text
+  stakeholders  String?  @db.Text
+  team          String?  @db.Text
+  premisses     String?  @db.Text
+  deliveries    String?  @db.Text
+  restrictions  String?  @db.Text
+  risks         String?  @db.Text
+  timeline      String?  @db.Text
+  costs         String?  @db.Text
+  
+  // Workflow & Priorização
+  approvalStatus String   @default("Draft") // Draft, Review, Approved, Rejected
+  impactScore    Int?     @default(1)       // 1-5
+  complexityScore Int?    @default(1)       // 1-5
+  valueScore     Float?   @default(0)       // Calculado
+  
+  updatedAt     DateTime @updatedAt
+}
+
+model Document {
+  id            String      @id @default(uuid())
+  name          String
+  type          String      // PDF, Excel, Imagem, etc.
+  url           String
+  projectItem   ProjectItem? @relation(fields: [projectItemId], references: [id])
+  projectItemId String?
+  projectName   String?     // Link direto com o projeto se não houver tarefa
+  category      String?     // Especificações, Evidência, Contrato
+  uploadedAt    DateTime    @default(now())
+}
+
+// Registros do Projeto (histórico de atividades)
+model ProjectRecord {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  publishedById String
+  publishedBy   User     @relation("RecordPublisher", fields: [publishedById], references: [id])
+  
+  executedById  String?
+  executedBy    User?    @relation("RecordExecutor", fields: [executedById], references: [id])
+  
+  comment       String?  @db.Text
+  
+  // Novos campos conforme slide
+  attachmentUrl String?  // URL do documento anexado
+  attachmentName String? // Nome do arquivo
+  revenue       Float?   @default(0) // Receita associada ao registro
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([projectId])
+  @@index([publishedById])
+  @@index([createdAt])
+}
+
+// Dependências entre Projetos
+model ProjectDependency {
+  id                String   @id @default(cuid())
+  projectId         String
+  project           Project  @relation("ProjectDependencies", fields: [projectId], references: [id], onDelete: Cascade)
+  
+  dependsOnProjectId String
+  dependsOnProject   Project  @relation("DependentProjects", fields: [dependsOnProjectId], references: [id], onDelete: Cascade)
+  
+  type              String   @default("FS") // FS (Finish-to-Start), SS, FF, SF
+  createdAt         DateTime @default(now())
+  
+  @@unique([projectId, dependsOnProjectId])
+  @@index([projectId])
+  @@index([dependsOnProjectId])
+}
+
+// Questões (Issues) do Projeto
+model Issue {
+  id              String   @id @default(uuid())
+  code            String?  // Código 1
+  code2           String?  // Código 2
+  title           String
+  description     String?  @db.Text
+  type            String   @default("INTERNAL") // INTERNAL, EXTERNAL
+  
+  // Relacionamento com Projeto
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // Situação
+  statusId        Int?
+  status          IssueStatus? @relation(fields: [statusId], references: [id])
+  
+  // Datas
+  plannedStart    DateTime?
+  plannedEnd      DateTime?
+  actualStart     DateTime?
+  actualEnd       DateTime?
+  
+  // Prioridade
+  priority        String   @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  
+  // Controle
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdById     String
+  createdBy       User     @relation("IssueCreator", fields: [createdById], references: [id])
+  
+  // Relacionamentos
+  members         IssueMember[]
+  comments        IssueComment[]
+  
+  @@index([projectId])
+  @@index([statusId])
+  @@index([type])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+// Situações das Questões
+model IssueStatus {
+  id          Int      @id @default(autoincrement())
+  label       String   @unique
+  color       String   // Hex color (#RRGGBB)
+  isDefault   Boolean  @default(false)
+  isFinal     Boolean  @default(false) // Se marca como concluída
+  order       Int      @default(0)
+  
+  issues      Issue[]
+  
+  @@index([order])
+}
+
+// Envolvidos nas Questões
+model IssueMember {
+  id          String   @id @default(uuid())
+  issueId     String
+  issue       Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  // RESPONSIBLE, EXECUTOR, TEAM, VALIDATES, EVALUATES, COMMENTS, OBSERVES
+  role        String   
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([issueId, userId, role])
+  @@index([issueId])
+  @@index([userId])
+  @@index([role])
+}
+
+// Comentários das Questões
+model IssueComment {
+  id          String   @id @default(uuid())
+  issueId     String
+  issue       Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  content     String   @db.Text
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([issueId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model ProjectType {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Gestão de Calendários (Work Calendar)
+model WorkCalendar {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  type            String   @default("BUSINESS_DAYS") // BUSINESS_DAYS, RUNNING_DAYS
+  workHoursPerDay Float    @default(8.0)
+  isDefault       Boolean  @default(false)
+  
+  holidays        CalendarHoliday[]
+  projects        Project[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model CalendarHoliday {
+  id           String       @id @default(uuid())
+  calendarId   String
+  calendar     WorkCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  
+  name         String
+  date         DateTime
+  recurring    Boolean      @default(false) // Se repete todo ano
+  
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([calendarId])
+  @@index([date])
+}
+
+// Cenários de Testes Integrados
+model TestScenario {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  externalId  String? // ID original do Excel (ex: OUT-T002_9)
+  scenario    String  // "Cenário"
+  task        String  // "Tarefa"
+  sequence    String? // "Sequência"
+  description String? @db.Text // "Descrição"
+  responsible String? // "Responsável"
+  docBeo      String? // "DOC BEO"
+  
+  status      String  @default("Não iniciado") // "Status"
+  
+  startDate   DateTime? // "Dt Início"
+  endDate     DateTime? // "Dt Conclusão"
+  
+  metadata    Json?    // Campos extras flexíveis
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+  @@index([responsible])
+}
+
+// Tarefas do Plano de Cutover (Go-Live)
+model CutoverTask {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  activity        String   // Atividade
+  predecessor     String?  // Predecessora
+  responsible     String?  // Responsável
+  transaction     String?  // Código de Transação (FS15, PSPO, etc.)
+  
+  duration        Float?   // Duração em horas
+  startDate       DateTime?
+  endDate         DateTime?
+  startTime       String?  // Hora de início (ex: "08:00")
+  endTime         String?  // Hora de término (ex: "10:00")
+  
+  newDeadline     DateTime? // Novo Prazo (reprogramação)
+  actualDate      DateTime? // Prazo Realizado
+  
+  percentComplete Float    @default(0) // % Concluído (0-100)
+  percentPlanned  Float    @default(0) // % Planejado (0-100)
+  
+  status          String   @default("pending") // pending, in_progress, delayed, completed
+  observations    String?  @db.Text
+  
+  order           Int      @default(0) // Ordenação
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([projectId])
+  @@index([status])
+  @@index([responsible])
+}
