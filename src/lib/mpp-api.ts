@@ -31,6 +31,8 @@ export interface MppTask {
   percent_complete?: number
   status?: string
   responsible?: string
+  predecessors?: string
+  duration?: number
 }
 
 export async function getMppTasks(projectId: string, searchParams?: URLSearchParams) {
@@ -50,7 +52,14 @@ export async function getMppTasks(projectId: string, searchParams?: URLSearchPar
     status: task.status,
     responsible: task.responsible,
     metadata: {
-      progress: task.percent_complete ?? 0,
+      progress:
+        typeof task.percent_complete === 'number'
+          ? task.percent_complete > 1
+            ? task.percent_complete / 100
+            : task.percent_complete
+          : 0,
+      predecessors: task.predecessors || '',
+      duration: task.duration || undefined,
     },
   }))
 }
