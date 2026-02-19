@@ -1,5 +1,5 @@
 "use client";
-
+// src/components/admin/admin-panel.tsx
 import { useState } from "react";
 import { Users, LayoutDashboard, Database, Settings, LogOut, Trello, Activity, Layout, FolderOpen, LayoutGrid, ZoomIn, ZoomOut, Type, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -39,17 +39,35 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
 
   const projectNames = Array.from(new Set(initialItems.map(i => i.originSheet))).filter(Boolean);
 
-  const menuItems = [
-    { id: "projetos", label: "Projetos", icon: FolderOpen },
-    { id: "kanban", label: "Quadro Ágil", icon: Trello },
-    { id: "canvas", label: "PM Canvas", icon: Layout },
-    { id: "resources", label: "Alocação", icon: Users },
-    { id: "perfis", label: "Perfis", icon: Shield },
-    { id: "portfolio", label: "Portfólio", icon: LayoutGrid },
-    { id: "library", label: "Documentos", icon: FolderOpen },
-    { id: "data", label: "Base de Dados", icon: Database },
-    { id: "settings", label: "Configurações", icon: Settings },
-  ];
+  // src/components/admin/admin-panel.tsx (TRECHO ATUALIZADO)
+
+// No array menuItems, adicionar:
+const menuItems = [
+  { id: "projetos", label: "Projetos Locais", icon: FolderOpen },
+  { id: "importados", label: "Projetos Importados", icon: Database }, // NOVO
+  { id: "kanban", label: "Quadro Ágil", icon: Trello },
+  { id: "canvas", label: "PM Canvas", icon: Layout },
+  { id: "resources", label: "Alocação", icon: Users },
+  { id: "perfis", label: "Perfis", icon: Shield },
+  { id: "portfolio", label: "Portfólio", icon: LayoutGrid },
+  { id: "library", label: "Documentos", icon: FolderOpen },
+  { id: "data", label: "Base de Dados", icon: Database },
+  { id: "settings", label: "Configurações", icon: Settings },
+];
+
+// No switch de activeTab, adicionar:
+// {activeTab === "importados" && (
+//   <div className="space-y-8">
+//     <div className="flex justify-between items-center">
+//       <h2 className="text-3xl font-bold text-[#094160]">Projetos Importados</h2>
+//       <Button onClick={() => router.push('/dashboard/import')}>
+//         <Plus className="w-4 h-4 mr-2" />
+//         Importar Novo
+//       </Button>
+//     </div>
+//     <ProjectList type="imported" showAll={true} />
+//   </div>
+// )}
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-[#094160] font-montserrat">
