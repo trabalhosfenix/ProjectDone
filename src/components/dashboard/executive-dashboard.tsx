@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
 
 interface ExecutiveDashboardProps {
   stats: any;
@@ -78,6 +80,15 @@ export function ExecutiveDashboard({ stats, items }: ExecutiveDashboardProps) {
            <p className="text-sm font-bold mt-1">98% Saudável</p>
            <p className="text-[8px] opacity-80">Baseado em 14 indicadores</p>
         </Card>
+      </div>
+
+
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <Card className="border-none shadow-sm"><CardContent className="pt-4"><p className="text-xs text-gray-500">% Real</p><p className="text-2xl font-bold">{stats.realPercentage || 0}%</p></CardContent></Card>
+        <Card className="border-none shadow-sm"><CardContent className="pt-4"><p className="text-xs text-gray-500">Duração Total</p><p className="text-2xl font-bold">{stats.totalDurationDays || 0}d</p></CardContent></Card>
+        <Card className="border-none shadow-sm"><CardContent className="pt-4"><p className="text-xs text-gray-500">Recursos Alocados</p><p className="text-2xl font-bold">{stats.allocatedResources || 0}</p></CardContent></Card>
+        <Card className="border-none shadow-sm"><CardContent className="pt-4"><p className="text-xs text-gray-500">Riscos Totais</p><p className="text-2xl font-bold">{stats.totalRisks || 0}</p><Link className="text-xs text-blue-600 hover:underline" href="/dashboard">Abrir riscos</Link></CardContent></Card>
+        <Card className="border-none shadow-sm"><CardContent className="pt-4"><p className="text-xs text-gray-500">Questões Abertas</p><p className="text-2xl font-bold">{stats.openIssues || 0}</p><Link className="text-xs text-blue-600 hover:underline" href="/dashboard">Abrir questões</Link></CardContent></Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
