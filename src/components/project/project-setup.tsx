@@ -6,7 +6,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { FileSpreadsheet, ListTodo, Upload, Loader2, ArrowRight, Download, ArrowLeft, FileCode } from 'lucide-react'
 import { toast } from 'sonner'
 import { importProjectExcel } from '@/app/actions/import-project'
-import { importMSProject } from '@/app/actions/import-msproject'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -58,24 +57,48 @@ export function ProjectSetup({ projectId }: ProjectSetupProps) {
     // projectId vai na URL agora
 
     try {
-      const response = await fetch(`/api/projetos/${projectId}/import-mpp`, {
+      const response = await fetch('/api/mpp/import-mpp', {
         method: 'POST',
         body: formData,
       })
 
       const result = await response.json()
 
-      if (response.ok && result.success) {
-        toast.success(result.message)
-        router.refresh()
-      } else {
-        toast.error(result.error || 'Erro ao importar MS Project')
-        if (result.details) console.error(result.details)
+      if (!response.ok || !result.job_id) {
+        toast.error(result.error || 'Erro ao iniciar importação MS Project')
         setIsImportingMSP(false)
+        return
       }
+
+      toast.info('Importação iniciada. Processando arquivo .MPP...')
+
+      const timeoutAt = Date.now() + 120000
+      while (Date.now() < timeoutAt) {
+        const jobResponse = await fetch(`/api/mpp/jobs/${result.job_id}`)
+        const job = await jobResponse.json()
+        const status = String(job.status || '').toLowerCase()
+
+        if (status === 'completed' || status === 'success' || status === 'done') {
+          toast.success('Importação do MS Project concluída!')
+          router.refresh()
+          setIsImportingMSP(false)
+          return
+        }
+
+        if (status === 'failed' || status === 'error') {
+          toast.error(job.error || 'Falha ao processar arquivo .MPP')
+          setIsImportingMSP(false)
+          return
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+      }
+
+      toast.error('Tempo de processamento excedido. Verifique o status da API.')
+      setIsImportingMSP(false)
     } catch (error) {
       console.error(error)
-      toast.error('Erro de conexão ou timeout')
+      toast.error('Erro de conexão com a MPP Platform API')
       setIsImportingMSP(false)
     }
   }
