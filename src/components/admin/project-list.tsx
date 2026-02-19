@@ -9,8 +9,30 @@ import {
   getProjectFilterOptions,
   type ProjectFilters,
 } from "@/app/actions/projects";
+import { getImportedProjects, syncProjectWithLocal } from "@/app/actions/imported-projects";
 import { getProjectTypes } from "@/app/actions/project-types";
-import { FolderKanban, Plus, Edit, Trash2, X, Save, Filter, FileSpreadsheet, ArrowLeft } from "lucide-react";
+import { 
+  FolderKanban, 
+  Plus, 
+  Edit, 
+  Trash2, 
+  X, 
+  Save, 
+  Filter, 
+  FileSpreadsheet, 
+  ArrowLeft,
+  Database,
+  RefreshCw,
+  Eye,
+  Download,
+  FileText,
+  AlertCircle
+} from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useToast } from "@/components/ui/use-toast";
 
 const STATUS_OPTIONS = [
   "A iniciar",
@@ -32,19 +54,31 @@ const DEFAULT_TYPES = [
 
 const PRIORITY_OPTIONS = ["Baixa", "Média", "Alta"];
 
+// Tipos de origem
+const SOURCE_TYPES = {
+  local: { label: "Local", icon: FolderKanban, color: "bg-blue-100 text-blue-700" },
+  mpp: { label: "MPP", icon: FileSpreadsheet, color: "bg-green-100 text-green-700" },
+  excel: { label: "Excel", icon: FileText, color: "bg-purple-100 text-purple-700" },
+  api: { label: "API", icon: Database, color: "bg-orange-100 text-orange-700" }
+};
+
 export function ProjectList() {
+  const { toast } = useToast();
   const [projects, setProjects] = useState<any[]>([]);
+  const [importedProjects, setImportedProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"list" | "new" | "edit">("list");
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [typeOptions, setTypeOptions] = useState<string[]>(DEFAULT_TYPES);
+  const [activeTab, setActiveTab] = useState<"all" | "local" | "imported">("all");
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   
   // Filtros
   const [filters, setFilters] = useState<ProjectFilters>({});
   const [filterOptions, setFilterOptions] = useState<any>({});
   
-  // Form data
+  // Form data (mantido igual)
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -64,27 +98,52 @@ export function ProjectList() {
   });
 
   useEffect(() => {
-    loadProjects();
-    loadFilterOptions();
-    loadTypes();
-  }, [filters]);
+    loadAllData();
+  }, [filters, activeTab]);
+
+  const loadAllData = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([
+        loadProjects(),
+        loadImportedProjects(),
+        loadFilterOptions(),
+        loadTypes()
+      ]);
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar dados",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadTypes = async () => {
     const res = await getProjectTypes();
     if (res.success && res.types && res.types.length > 0) {
-      // Filtra apenas ativos e pega os nomes
       const activeNames = res.types.filter((t: any) => t.active).map((t: any) => t.name);
       if (activeNames.length > 0) setTypeOptions(activeNames);
     }
   };
 
   const loadProjects = async () => {
-    setLoading(true);
     const result = await getProjects(filters);
     if (result.success && result.projects) {
       setProjects(result.projects);
     }
-    setLoading(false);
+  };
+
+  const loadImportedProjects = async () => {
+    const result = await getImportedProjects({ 
+      limit: 100,
+      status: filters.status?.[0] 
+    });
+    if (result && result.projects) {
+      setImportedProjects(result.projects);
+    }
   };
 
   const loadFilterOptions = async () => {
@@ -92,6 +151,65 @@ export function ProjectList() {
     if (result.success && result.options) {
       setFilterOptions(result.options);
     }
+  };
+
+  const handleSync = async (projectId: string) => {
+    setSyncingId(projectId);
+    try {
+      const result = await syncProjectWithLocal(projectId);
+      if (result.success) {
+        toast({
+          title: "Sucesso",
+          description: "Projeto sincronizado com sucesso"
+        });
+        await loadImportedProjects();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      toast({
+        title: "Erro na sincronização",
+        description: String(error),
+        variant: "destructive"
+      });
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
+  // Combinar projetos baseado na tab ativa
+  const getDisplayProjects = () => {
+    switch (activeTab) {
+      case "local":
+        return projects.map(p => ({ ...p, source: 'local' }));
+      case "imported":
+        return importedProjects.map(p => ({ ...p, source: p.sourceFormat || 'mpp' }));
+      case "all":
+      default:
+        return [
+          ...projects.map(p => ({ ...p, source: 'local' })),
+          ...importedProjects.map(p => ({ ...p, source: p.sourceFormat || 'mpp' }))
+        ].sort((a, b) => {
+          // Ordenar por data de criação/importação (mais recente primeiro)
+          const dateA = a.createdAt || a.importedAt;
+          const dateB = b.createdAt || b.importedAt;
+          return new Date(dateB).getTime() - new Date(dateA).getTime();
+        });
+    }
+  };
+
+  const displayProjects = getDisplayProjects();
+
+  const getSourceBadge = (project: any) => {
+    const source = project.source || 'local';
+    const config = SOURCE_TYPES[source as keyof typeof SOURCE_TYPES] || SOURCE_TYPES.local;
+    
+    return (
+      <Badge className={config.color}>
+        <config.icon className="w-3 h-3 mr-1" />
+        {config.label}
+      </Badge>
+    );
   };
 
   const handleNew = () => {
@@ -116,6 +234,16 @@ export function ProjectList() {
   };
 
   const handleEdit = (project: any) => {
+    // Só permitir edição de projetos locais
+    if (project.source !== 'local') {
+      toast({
+        title: "Ação não permitida",
+        description: "Projetos importados só podem ser visualizados, não editados diretamente.",
+        variant: "warning"
+      });
+      return;
+    }
+
     setSelectedProject(project);
     setFormData({
       name: project.name || "",
@@ -144,7 +272,11 @@ export function ProjectList() {
 
   const handleSave = async () => {
     if (!formData.name.trim()) {
-      alert("Por favor, informe o nome do projeto.");
+      toast({
+        title: "Campo obrigatório",
+        description: "Por favor, informe o nome do projeto.",
+        variant: "destructive"
+      });
       return;
     }
 
@@ -164,16 +296,34 @@ export function ProjectList() {
     }
 
     if (result?.success) {
+      toast({
+        title: "Sucesso",
+        description: view === "new" ? "Projeto criado com sucesso" : "Projeto atualizado com sucesso"
+      });
       await loadProjects();
       handleCancel();
     } else {
-      alert(result?.error || "Erro ao salvar projeto");
+      toast({
+        title: "Erro",
+        description: result?.error || "Erro ao salvar projeto",
+        variant: "destructive"
+      });
     }
     
     setLoading(false);
   };
 
   const handleDelete = async (project: any) => {
+    // Só permitir exclusão de projetos locais
+    if (project.source !== 'local') {
+      toast({
+        title: "Ação não permitida",
+        description: "Projetos importados não podem ser excluídos diretamente.",
+        variant: "warning"
+      });
+      return;
+    }
+
     if (!confirm(`Deseja realmente excluir o projeto "${project.name}"?`)) {
       return;
     }
@@ -182,9 +332,17 @@ export function ProjectList() {
     const result = await deleteProject(project.id);
     
     if (result.success) {
+      toast({
+        title: "Sucesso",
+        description: "Projeto excluído com sucesso"
+      });
       await loadProjects();
     } else {
-      alert(result.error || "Erro ao excluir projeto");
+      toast({
+        title: "Erro",
+        description: result.error || "Erro ao excluir projeto",
+        variant: "destructive"
+      });
     }
     
     setLoading(false);
@@ -198,11 +356,20 @@ export function ProjectList() {
     setFilters({});
   };
 
+  // Função para navegar para detalhes do projeto importado
+  const handleViewImported = (projectId: string) => {
+    window.location.href = `/dashboard/projetos-importados/${projectId}`;
+  };
+
   if (loading && view === "list") {
-    return <div className="p-6">Carregando...</div>;
+    return (
+      <div className="flex items-center justify-center p-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#094160]"></div>
+      </div>
+    );
   }
 
-  // View: Formulário
+  // View: Formulário (mantido igual)
   if (view === "new" || view === "edit") {
     return (
       <div className="space-y-6">
@@ -228,7 +395,7 @@ export function ProjectList() {
         </div>
 
         <div className="bg-white border rounded-lg p-6 space-y-6">
-          {/* Grid de campos */}
+          {/* Grid de campos - IDÊNTICO AO ORIGINAL */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Nome */}
             <div className="md:col-span-2">
@@ -430,197 +597,288 @@ export function ProjectList() {
     );
   }
 
-  // View: Lista
+  // View: Lista com Tabs
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold">Lista de Projetos</h2>
+          <h2 className="text-2xl font-bold">Gestão de Projetos</h2>
           <p className="text-gray-600 text-sm mt-1">
-            Gerencie todos os projetos da organização
+            Gerencie projetos locais e importados
           </p>
         </div>
-        <button
-          onClick={handleNew}
-          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Projeto
-        </button>
-      </div>
-
-      {/* Filtros */}
-      <div className="bg-white border rounded-lg p-4">
-        <div className="flex items-center justify-between mb-3">
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2 text-gray-700 font-semibold"
+        <div className="flex gap-2">
+          <Button
+            onClick={() => window.location.href = '/dashboard/import'}
+            variant="outline"
+            className="flex items-center gap-2"
           >
-            <Filter className="w-4 h-4" />
-            Filtros
-          </button>
-          {Object.keys(filters).length > 0 && (
-            <button
-              onClick={clearFilters}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              Limpar filtros
-            </button>
-          )}
+            <Database className="w-4 h-4" />
+            Importar MPP
+          </Button>
+          <Button
+            onClick={handleNew}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
+          >
+            <Plus className="w-4 h-4" />
+            Novo Projeto Local
+          </Button>
         </div>
-
-        {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            {/* Busca */}
-            <input
-              type="text"
-              placeholder="Buscar por nome..."
-              value={filters.search || ""}
-              onChange={(e) => applyFilter("search", e.target.value || undefined)}
-              className="border rounded px-3 py-2"
-            />
-
-            {/* Status */}
-            <select
-              value={filters.status?.[0] || ""}
-              onChange={(e) => applyFilter("status", e.target.value ? [e.target.value] : undefined)}
-              className="border rounded px-3 py-2"
-            >
-              <option value="">Todos os status</option>
-              {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-
-            {/* Área */}
-            <select
-              value={filters.area?.[0] || ""}
-              onChange={(e) => applyFilter("area", e.target.value ? [e.target.value] : undefined)}
-              className="border rounded px-3 py-2"
-            >
-              <option value="">Todas as áreas</option>
-              {filterOptions.areas?.map((area: string) => (
-                <option key={area} value={area}>
-                  {area}
-                </option>
-              ))}
-            </select>
-
-            {/* Tipo */}
-            <select
-              value={filters.type?.[0] || ""}
-              onChange={(e) => applyFilter("type", e.target.value ? [e.target.value] : undefined)}
-              className="border rounded px-3 py-2"
-            >
-              <option value="">Todos os tipos</option>
-              {typeOptions.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
       </div>
 
-      {/* Tabela */}
-      <div className="bg-white border rounded-lg overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-800 text-white">
-            <tr>
-              <th className="text-left p-4">Projeto</th>
-              <th className="text-center p-4 w-32">Status</th>
-              <th className="text-center p-4 w-32">Tipo</th>
-              <th className="text-center p-4 w-32">Área</th>
-              <th className="text-center p-4 w-32">Tarefas</th>
-              <th className="text-center p-4 w-40">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {projects.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="p-8 text-center text-gray-500">
-                  Nenhum projeto encontrado
-                </td>
-              </tr>
-            ) : (
-              projects.map((project, index) => (
-                <tr
-                  key={project.id}
-                  className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
+      {/* Tabs de origem */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+        <TabsList className="grid w-full md:w-auto grid-cols-3">
+          <TabsTrigger value="all" className="flex items-center gap-2">
+            <FolderKanban className="w-4 h-4" />
+            Todos
+          </TabsTrigger>
+          <TabsTrigger value="local" className="flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            Locais
+          </TabsTrigger>
+          <TabsTrigger value="imported" className="flex items-center gap-2">
+            <Database className="w-4 h-4" />
+            Importados
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value={activeTab} className="mt-6">
+          {/* Filtros (compartilhados) */}
+          <div className="bg-white border rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2 text-gray-700 font-semibold"
+              >
+                <Filter className="w-4 h-4" />
+                Filtros
+              </button>
+              {Object.keys(filters).length > 0 && (
+                <button
+                  onClick={clearFilters}
+                  className="text-sm text-blue-600 hover:underline"
                 >
-                  <td className="p-4">
-                    <div className="flex items-center gap-2">
-                      <FolderKanban className="w-4 h-4 text-gray-400" />
-                      <div>
-                        <div className="font-medium">{project.name}</div>
-                        {project.code && (
-                          <div className="text-xs text-gray-500">{project.code}</div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-4 text-center">
-                    <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                      project.status === "Concluído" ? "bg-green-100 text-green-700" :
-                      project.status === "Andamento" ? "bg-blue-100 text-blue-700" :
-                      project.status === "Atraso" ? "bg-red-100 text-red-700" :
-                      "bg-gray-100 text-gray-700"
-                    }`}>
-                      {project.status}
-                    </span>
-                  </td>
-                  <td className="p-4 text-center text-sm">{project.type || "-"}</td>
-                  <td className="p-4 text-center text-sm">{project.area || "-"}</td>
-                  <td className="p-4 text-center">
-                    <span className="text-blue-600 font-semibold">
-                      {project._count?.items || 0}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center justify-center gap-2">
-                      <a
-                        href={`/dashboard/projetos/${project.id}`}
-                        className="flex items-center gap-1 text-green-600 hover:text-green-800 text-sm font-medium hover:underline"
-                      >
-                        <FolderKanban className="w-3 h-3" />
-                        Ver Detalhes
-                      </a>
-                      <button
-                        onClick={() => handleEdit(project)}
-                        className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline"
-                      >
-                        <Edit className="w-3 h-3" />
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleDelete(project)}
-                        disabled={project._count?.items > 0}
-                        className="flex items-center gap-1 text-red-600 hover:text-red-800 text-sm font-medium hover:underline disabled:opacity-30 disabled:cursor-not-allowed"
-                        title={
-                          project._count?.items > 0
-                            ? "Não é possível excluir projeto com tarefas vinculadas"
-                            : "Excluir projeto"
-                        }
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        Excluir
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                  Limpar filtros
+                </button>
+              )}
+            </div>
 
-      <div className="text-right text-sm text-gray-500">
-        {projects.length} projeto(s) listado(s)
-      </div>
+            {showFilters && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                {/* Busca */}
+                <input
+                  type="text"
+                  placeholder="Buscar por nome..."
+                  value={filters.search || ""}
+                  onChange={(e) => applyFilter("search", e.target.value || undefined)}
+                  className="border rounded px-3 py-2"
+                />
+
+                {/* Status */}
+                <select
+                  value={filters.status?.[0] || ""}
+                  onChange={(e) => applyFilter("status", e.target.value ? [e.target.value] : undefined)}
+                  className="border rounded px-3 py-2"
+                >
+                  <option value="">Todos os status</option>
+                  {STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Área */}
+                <select
+                  value={filters.area?.[0] || ""}
+                  onChange={(e) => applyFilter("area", e.target.value ? [e.target.value] : undefined)}
+                  className="border rounded px-3 py-2"
+                >
+                  <option value="">Todas as áreas</option>
+                  {filterOptions.areas?.map((area: string) => (
+                    <option key={area} value={area}>
+                      {area}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Tipo */}
+                <select
+                  value={filters.type?.[0] || ""}
+                  onChange={(e) => applyFilter("type", e.target.value ? [e.target.value] : undefined)}
+                  className="border rounded px-3 py-2"
+                >
+                  <option value="">Todos os tipos</option>
+                  {typeOptions.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Tabela */}
+          <div className="bg-white border rounded-lg overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-800 text-white">
+                <tr>
+                  <th className="text-left p-4">Projeto</th>
+                  <th className="text-center p-4 w-24">Origem</th>
+                  <th className="text-center p-4 w-32">Status</th>
+                  <th className="text-center p-4 w-32">Tipo</th>
+                  <th className="text-center p-4 w-32">Área</th>
+                  <th className="text-center p-4 w-24">Tarefas</th>
+                  <th className="text-center p-4 w-48">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayProjects.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-gray-500">
+                      Nenhum projeto encontrado
+                    </td>
+                  </tr>
+                ) : (
+                  displayProjects.map((project, index) => (
+                    <tr
+                      key={`${project.source}-${project.id}`}
+                      className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
+                    >
+                      <td className="p-4">
+                        <div className="flex items-center gap-2">
+                          {project.source === 'local' ? (
+                            <FolderKanban className="w-4 h-4 text-gray-400" />
+                          ) : (
+                            <Database className="w-4 h-4 text-green-500" />
+                          )}
+                          <div>
+                            <div className="font-medium">{project.name}</div>
+                            <div className="flex items-center gap-2 text-xs">
+                              {project.code && (
+                                <span className="text-gray-500">{project.code}</span>
+                              )}
+                              {project.source !== 'local' && project.importedAt && (
+                                <span className="text-gray-400">
+                                  {new Date(project.importedAt).toLocaleDateString('pt-BR')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
+                        {getSourceBadge(project)}
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
+                          project.status === "Concluído" ? "bg-green-100 text-green-700" :
+                          project.status === "Andamento" ? "bg-blue-100 text-blue-700" :
+                          project.status === "Atraso" ? "bg-red-100 text-red-700" :
+                          "bg-gray-100 text-gray-700"
+                        }`}>
+                          {project.status || (project.source !== 'local' ? 'Importado' : 'A iniciar')}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center text-sm">{project.type || "-"}</td>
+                      <td className="p-4 text-center text-sm">{project.area || "-"}</td>
+                      <td className="p-4 text-center">
+                        <span className="text-blue-600 font-semibold">
+                          {project._count?.items || project.totalTasks || 0}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center justify-center gap-2">
+                          {project.source === 'local' ? (
+                            // Ações para projetos locais
+                            <>
+                              <a
+                                href={`/dashboard/projetos/${project.id}`}
+                                className="flex items-center gap-1 text-green-600 hover:text-green-800 text-sm font-medium hover:underline"
+                              >
+                                <FolderKanban className="w-3 h-3" />
+                                Detalhes
+                              </a>
+                              <button
+                                onClick={() => handleEdit(project)}
+                                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline"
+                              >
+                                <Edit className="w-3 h-3" />
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => handleDelete(project)}
+                                disabled={project._count?.items > 0}
+                                className="flex items-center gap-1 text-red-600 hover:text-red-800 text-sm font-medium hover:underline disabled:opacity-30 disabled:cursor-not-allowed"
+                                title={
+                                  project._count?.items > 0
+                                    ? "Não é possível excluir projeto com tarefas vinculadas"
+                                    : "Excluir projeto"
+                                }
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                Excluir
+                              </button>
+                            </>
+                          ) : (
+                            // Ações para projetos importados
+                            <>
+                              <button
+                                onClick={() => handleViewImported(project.id)}
+                                className="flex items-center gap-1 text-green-600 hover:text-green-800 text-sm font-medium hover:underline"
+                              >
+                                <Eye className="w-3 h-3" />
+                                Visualizar
+                              </button>
+                              <button
+                                onClick={() => handleSync(project.id)}
+                                disabled={syncingId === project.id}
+                                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline disabled:opacity-50"
+                              >
+                                <RefreshCw className={`w-3 h-3 ${syncingId === project.id ? 'animate-spin' : ''}`} />
+                                {syncingId === project.id ? 'Sinc...' : 'Sincronizar'}
+                              </button>
+                              <button
+                                onClick={() => window.open(`/api/export/project/${project.id}`, '_blank')}
+                                className="flex items-center gap-1 text-purple-600 hover:text-purple-800 text-sm font-medium hover:underline"
+                              >
+                                <Download className="w-3 h-3" />
+                                Exportar
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Rodapé com contagem */}
+          <div className="flex justify-between items-center mt-4 text-sm text-gray-500">
+            <div>
+              {displayProjects.length} projeto(s) listado(s)
+              {activeTab === 'all' && (
+                <span className="ml-2 text-xs">
+                  ({projects.length} locais, {importedProjects.length} importados)
+                </span>
+              )}
+            </div>
+            
+            {activeTab === 'imported' && importedProjects.length > 0 && (
+              <div className="flex items-center gap-2 text-xs bg-blue-50 p-2 rounded">
+                <AlertCircle className="w-4 h-4 text-blue-500" />
+                <span>Clique em "Sincronizar" para integrar com o módulo de issues/riscos</span>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 "use client"
+// src\app\dashboard\layout.tsx
 
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout"
 import { usePathname } from "next/navigation"

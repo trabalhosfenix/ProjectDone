@@ -1,0 +1,8 @@
+# Banco de Dados
+POSTGRES_USER=admin
+POSTGRES_PASSWORD=projectdone2025
+POSTGRES_DB=projectdone
+
+# Aplicação
+NEXTAUTH_SECRET=ponto_de_criacao_secret_2025
+NEXTAUTH_URL=https://projectdone.com.br
