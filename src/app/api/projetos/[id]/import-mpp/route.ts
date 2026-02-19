@@ -1,51 +1,64 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import { MPP_API_BASE_URL } from '@/lib/mpp-api'
 
-export async function PATCH(
-  request: Request,
+export const maxDuration = 300
+
+/**
+ * Endpoint legado mantido para compatibilidade com telas antigas:
+ * POST /api/projetos/:id/import-mpp
+ *
+ * Agora delega 100% para a MPP Platform API (FastAPI + worker + MPXJ sidecar)
+ * e não executa Java localmente no Next.js.
+ */
+export async function POST(
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params
-    const body = await request.json()
+    const { id: legacyProjectId } = await params
+    const formData = await request.formData()
+    const file = formData.get('file')
 
-    const updated = await prisma.project.update({
-      where: { id },
-      data: {
-        budget: body.budget !== undefined ? body.budget : undefined,
-        actualCost: body.actualCost !== undefined ? body.actualCost : undefined,
-        startDate: body.startDate !== undefined ? body.startDate : undefined,
-        endDate: body.endDate !== undefined ? body.endDate : undefined,
-        realStartDate: body.realStartDate !== undefined ? body.realStartDate : undefined,
-        realEndDate: body.realEndDate !== undefined ? body.realEndDate : undefined,
-        calendar: body.calendar !== undefined ? body.calendar : undefined,
-        duration: body.duration !== undefined ? body.duration : undefined,
-      }
-    })
-
-    return NextResponse.json({ success: true, data: updated })
-  } catch (error) {
-    console.error('Erro ao atualizar projeto:', error)
-    return NextResponse.json({ success: false, error: 'Erro ao atualizar' }, { status: 500 })
-  }
-}
-
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params
-    const project = await prisma.project.findUnique({
-      where: { id }
-    })
-
-    if (!project) {
-      return NextResponse.json({ success: false, error: 'Não encontrado' }, { status: 404 })
+    if (!file) {
+      return NextResponse.json(
+        { success: false, error: 'Arquivo não fornecido' },
+        { status: 400 }
+      )
     }
 
-    return NextResponse.json({ success: true, data: project })
+    // Encaminha para API SaaS de ingestão.
+    // Incluímos legacyProjectId como contexto opcional para rastreabilidade,
+    // sem acoplar o parser ao schema local do Next.js.
+    const upstreamFormData = new FormData()
+    upstreamFormData.append('file', file)
+    upstreamFormData.append('legacy_project_id', legacyProjectId)
+
+    const upstreamResponse = await fetch(`${MPP_API_BASE_URL}/v1/projects/import/mpp`, {
+      method: 'POST',
+      body: upstreamFormData,
+      cache: 'no-store',
+    })
+
+    const body = await upstreamResponse.json()
+
+    // Normaliza contrato para clientes antigos e novos.
+    return NextResponse.json(
+      {
+        success: upstreamResponse.ok,
+        ...body,
+        job_id: body.job_id || body.jobId,
+        project_id: body.project_id || body.projectId,
+      },
+      { status: upstreamResponse.status }
+    )
   } catch (error) {
-    return NextResponse.json({ success: false, error: 'Erro' }, { status: 500 })
+    console.error('Erro na integração de importação MPP:', error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Falha ao integrar com a MPP Platform API.',
+      },
+      { status: 500 }
+    )
   }
 }
