@@ -18,7 +18,6 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { importProjectExcel } from '@/app/actions/import-project'
-import { importMSProject, checkImportStatus } from '@/app/actions/import-msproject'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Progress } from '@/components/ui/progress'
@@ -138,49 +137,48 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
     formData.append('file', file)
 
     try {
-      // Enviar arquivo
-      const response = await fetch(`/api/projetos/${projectId}/import-mpp`, {
+      const response = await fetch('/api/mpp/import-mpp', {
         method: 'POST',
         body: formData,
       })
 
       const result = await response.json()
 
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro na importação')
+      if (!response.ok || !result.job_id) {
+        toast.error(result.error || 'Erro ao iniciar importação MS Project')
+        setIsImportingMSP(false)
+        return
       }
 
-      // Se retornou jobId, iniciar polling
-      if (result.jobId) {
-        setImportJob({
-          id: result.jobId,
-          status: 'processing',
-          progress: 10,
-          message: 'Processando arquivo...'
-        })
+      toast.info('Importação iniciada. Processando arquivo .MPP...')
 
-        // Iniciar polling a cada 2 segundos
-        const interval = setInterval(() => {
-          pollJobStatus(result.jobId)
-        }, 2000)
-        
-        setPollingInterval(interval)
+      const timeoutAt = Date.now() + 120000
+      while (Date.now() < timeoutAt) {
+        const jobResponse = await fetch(`/api/mpp/jobs/${result.job_id}`)
+        const job = await jobResponse.json()
+        const status = String(job.status || '').toLowerCase()
 
-        // Mostrar toast informativo
-        toast.info('Importação em andamento', {
-          description: 'O arquivo está sendo processado. Isso pode levar alguns minutos.'
-        })
-      } else {
-        // Importação síncrona (simples)
-        toast.success(result.message || 'Importado com sucesso')
-        router.refresh()
-        setTimeout(() => {
-          router.push(`/dashboard/projetos/${projectId}/gantt`)
-        }, 1500)
+        if (status === 'completed' || status === 'success' || status === 'done') {
+          toast.success('Importação do MS Project concluída!')
+          router.refresh()
+          setIsImportingMSP(false)
+          return
+        }
+
+        if (status === 'failed' || status === 'error') {
+          toast.error(job.error || 'Falha ao processar arquivo .MPP')
+          setIsImportingMSP(false)
+          return
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 1500))
       }
-    } catch (error: any) {
+
+      toast.error('Tempo de processamento excedido. Verifique o status da API.')
+      setIsImportingMSP(false)
+    } catch (error) {
       console.error(error)
-      toast.error(error.message || 'Erro na importação')
+      toast.error('Erro de conexão com a MPP Platform API')
       setIsImportingMSP(false)
       setImportJob(null)
     }
