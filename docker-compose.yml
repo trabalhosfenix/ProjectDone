@@ -51,6 +51,36 @@ services:
     networks:
       - projectdone-net
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: projectdone-pgadmin
+    restart: always
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@projectdone.com  # Seu e-mail de login
+      - PGADMIN_DEFAULT_PASSWORD=admin123           # Sua senha de login
+    ports:
+      - "5050:80"  # Acesse no seu navegador via http://localhost:5050
+    depends_on:
+      - db
+    networks:
+      - projectdone-net
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin/data  # Para salvar suas configurações
+
+  pgweb:
+    container_name: projectdone-pgweb
+    image: sosedoff/pgweb:latest
+    restart: always
+    ports:
+      - "8081:8081"  # Acesse via http://localhost:8081
+    environment:
+      - PGWEB_DATABASE_URL=postgres://admin:projectdone2025@db:5432/projectdone?sslmode=disable
+    depends_on:
+      - db
+    networks:
+      - projectdone-net
+
+
 networks:
   projectdone-net:
     driver: bridge
@@ -59,3 +89,4 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  pgadmin_data:

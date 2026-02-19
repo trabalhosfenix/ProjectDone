@@ -3,20 +3,24 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl openssl-dev
+# Instala dependências do sistema
+RUN apk add --no-cache openssl openssl-dev python3 make g++
 
+# Copia arquivos de dependência
 COPY package*.json ./
 COPY prisma ./prisma/
-RUN npm install prisma@5.22.0 @prisma/client@5.22.0 --save-exact --no-package-lock
 
-RUN npm install
+# Instala TODAS as dependências (incluindo devDependencies)
+RUN npm ci
 
-COPY . .
-
-# Gera o cliente Prisma com o adapter
+# Gera o cliente Prisma (precisa estar disponível)
 RUN npx prisma generate
 
-ENV NEXT_TELEMETRY_DISABLED 1
+# Copia o resto do código
+COPY . .
+
+# Build da aplicação
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # Production Stage
@@ -24,26 +28,43 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl
+# Apenas utilitários necessários em produção
+RUN apk add --no-cache openssl postgresql-client
 
-ENV NODE_ENV production
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Copia tudo necessário
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+# Cria usuário não-root para segurança
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
+# Copia arquivos públicos e configurações
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+
+# Copia o build do Next.js
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# COPIA O NODE_MODULES COMPLETO (solução para o Prisma)
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+
+# Garante permissões corretas
+RUN chmod -R 755 /app/node_modules/.bin
+
+# Expõe a porta
 EXPOSE 3000
 
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
+# Configura variáveis de ambiente
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
-COPY entrypoint.sh ./
+# Copia entrypoint
+COPY --chown=nextjs:nodejs entrypoint.sh ./
 RUN chmod +x entrypoint.sh
+
+# Muda para usuário não-root
+USER nextjs
 
 CMD ["./entrypoint.sh"]
