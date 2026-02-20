@@ -11,6 +11,21 @@ import { Upload, Loader2, FileCode, ArrowRight, CircleCheck, AlertTriangle } fro
 
 type ImportStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'error'
 
+
+function extractProjectId(payload: Record<string, unknown>) {
+  const direct = payload.project_id || payload.projectId
+  if (direct) return String(direct)
+
+  const nested = payload.result || payload.data
+  if (nested && typeof nested === 'object') {
+    const nestedRecord = nested as Record<string, unknown>
+    const nestedId = nestedRecord.project_id || nestedRecord.projectId
+    if (nestedId) return String(nestedId)
+  }
+
+  return undefined
+}
+
 function normalizeStatus(value: unknown): ImportStatus {
   const status = String(value || '').toLowerCase()
   if (['completed', 'success', 'done', 'finished'].includes(status)) return 'completed'
@@ -75,7 +90,7 @@ export default function ImportProjectPage() {
       setProgress(Number.isFinite(nextProgress) ? Math.max(0, Math.min(100, nextProgress)) : 0)
       setMessage(data.message || data.detail || data.error || '')
 
-      const resolvedProjectId = data.project_id || data.projectId
+      const resolvedProjectId = extractProjectId(data as Record<string, unknown>)
       if (resolvedProjectId) {
         setProjectId(String(resolvedProjectId))
       }
@@ -119,7 +134,7 @@ export default function ImportProjectPage() {
       }
 
       setJobId(String(data.job_id))
-      const resolvedProjectId = data.project_id || data.projectId
+      const resolvedProjectId = extractProjectId(data as Record<string, unknown>)
       if (resolvedProjectId) {
         setProjectId(String(resolvedProjectId))
       }

@@ -15,6 +15,21 @@ import { ProjectPageHeader } from '@/components/project/project-page-header'
 
 type ImportStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'error'
 
+
+function extractProjectId(payload: Record<string, unknown>) {
+  const direct = payload.project_id || payload.projectId
+  if (direct) return String(direct)
+
+  const nested = payload.result || payload.data
+  if (nested && typeof nested === 'object') {
+    const nestedRecord = nested as Record<string, unknown>
+    const nestedId = nestedRecord.project_id || nestedRecord.projectId
+    if (nestedId) return String(nestedId)
+  }
+
+  return undefined
+}
+
 function normalizeStatus(value: unknown): ImportStatus {
   const status = String(value || '').toLowerCase()
   if (['completed', 'success', 'done', 'finished'].includes(status)) return 'completed'
@@ -36,6 +51,7 @@ export default function ImportarPage() {
   const [jobId, setJobId] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [fileName, setFileName] = useState('')
+  const [resolvedMppProjectId, setResolvedMppProjectId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const persistMppLink = (legacyProjectId: string, mppProjectId: string) => {
@@ -93,14 +109,15 @@ export default function ImportarPage() {
       setProgress(Number(data.progress || data.percent || 0))
       setMessage(data.message || data.error || '')
 
-      const resolvedProjectId = data.project_id || data.projectId
+      const resolvedProjectId = extractProjectId(data as Record<string, unknown>)
       if (resolvedProjectId) {
+        setResolvedMppProjectId(String(resolvedProjectId))
         persistMppLink(projectId, String(resolvedProjectId))
       }
 
       if (nextStatus === 'completed') {
         toast.success('Importação concluída com sucesso!')
-        const targetMppProjectId = resolvedProjectId || projectId
+        const targetMppProjectId = resolvedProjectId || resolvedMppProjectId || projectId
         router.push(`/dashboard/projetos/${projectId}/gantt?mppProjectId=${targetMppProjectId}`)
         return
       }
@@ -147,8 +164,9 @@ export default function ImportarPage() {
       }
 
       setJobId(String(data.job_id || data.jobId))
-      const resolvedProjectId = data.project_id || data.projectId
+      const resolvedProjectId = extractProjectId(data as Record<string, unknown>)
       if (resolvedProjectId) {
+        setResolvedMppProjectId(String(resolvedProjectId))
         persistMppLink(projectId, String(resolvedProjectId))
       }
       setStatus('processing')
