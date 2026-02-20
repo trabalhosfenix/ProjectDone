@@ -16,7 +16,13 @@ import { ProjectPageHeader } from '@/components/project/project-page-header'
 export default async function CronogramaPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   
-  const items = await getMppTasks(id)
+  let items: Awaited<ReturnType<typeof getMppTasks>> = []
+  try {
+    items = await getMppTasks(id)
+  } catch (error) {
+    console.error('Erro ao carregar cronograma via MPP API:', error)
+    items = []
+  }
 
   // Buscar membros para cruzar informações de cargo/função
   const members = await prisma.projectMember.findMany({
