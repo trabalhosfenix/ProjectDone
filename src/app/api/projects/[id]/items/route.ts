@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { getMppTasks } from '@/lib/mpp-api'
 
 export async function GET(
   request: Request,
@@ -7,15 +7,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    
-    const items = await prisma.projectItem.findMany({
-      where: { projectId: id },
-      orderBy: { createdAt: 'asc' }
-    })
-
+    const { searchParams } = new URL(request.url)
+    const items = await getMppTasks(id, searchParams)
     return NextResponse.json({ success: true, data: items })
   } catch (error) {
     console.error('Erro ao buscar itens:', error)
-    return NextResponse.json({ success: false, error: 'Erro' }, { status: 500 })
+    return NextResponse.json({ success: false, error: 'Erro ao buscar tarefas na MPP API' }, { status: 500 })
   }
 }

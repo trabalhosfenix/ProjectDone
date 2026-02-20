@@ -1,7 +1,28 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use server'
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+
+async function canChangeScenarioStatus() {
+  const session = await getServerSession(authOptions)
+  const userId = (session?.user as any)?.id as string | undefined
+  if (!userId) return false
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { userRole: true },
+  })
+
+  if (!user) return false
+  if (user.role === 'ADMIN') return true
+
+  const permissions = (user.userRole?.permissions || {}) as Record<string, unknown>
+  return permissions.testsStatusUpdate === true || permissions.testsAdmin === true
+}
+
 
 export async function createTestScenario(projectId: string, data: any) {
   try {
@@ -32,6 +53,16 @@ export async function createTestScenario(projectId: string, data: any) {
 
 export async function updateTestScenario(id: string, projectId: string, data: any) {
   try {
+    const current = await prisma.testScenario.findUnique({ where: { id }, select: { status: true } })
+    const wantsStatusChange = current?.status !== data.status
+
+    if (wantsStatusChange) {
+      const allowed = await canChangeScenarioStatus()
+      if (!allowed) {
+        return { success: false, error: 'Você não tem permissão para alterar status de testes.' }
+      }
+    }
+
     await prisma.testScenario.update({
       where: { id },
       data: {
@@ -136,40 +167,50 @@ export async function getTestDashboardStats(projectId: string) {
     const businessDaysRemaining = countBusinessDays(today, new Date(targetDate))
     const metaPerDay = businessDaysRemaining > 0 ? Math.ceil(pending / businessDaysRemaining) : pending
     
-    // --- GRÁFICO DE EVOLUÇÃO ---
-    // Agrupar conclusões por data (endDate do cenário ou updatedAt)
+    // --- GRÁFICO DE EVOLUÇÃO (Curva S real acumulada) ---
+    const plannedByDate: Record<string, number> = {}
+    scenarios.forEach(s => {
+      const source = s.startDate || s.createdAt
+      const date = source.toISOString().split('T')[0]
+      plannedByDate[date] = (plannedByDate[date] || 0) + 1
+    })
+
     const completionsByDate: Record<string, number> = {}
     completedScenarios.forEach(s => {
-        const date = (s.endDate || s.updatedAt).toISOString().split('T')[0]
-        completionsByDate[date] = (completionsByDate[date] || 0) + 1
+      const date = (s.endDate || s.updatedAt).toISOString().split('T')[0]
+      completionsByDate[date] = (completionsByDate[date] || 0) + 1
     })
-    
-    // Ordenar datas e calcular acumulado
-    const sortedDates = Object.keys(completionsByDate).sort()
+
+    const allDates = Array.from(new Set([...Object.keys(plannedByDate), ...Object.keys(completionsByDate)])).sort()
+
     let accumulatedCompleted = 0
-    
-    // Dados para o gráfico (Concluído x Meta)
-    const chartData = sortedDates.map((date, idx) => {
-        accumulatedCompleted += completionsByDate[date]
-        // Meta linear: (total / dias úteis totais) * dia
-        const projectStart = project?.startDate || (sortedDates[0] ? new Date(sortedDates[0]) : today)
-        const totalBusinessDays = countBusinessDays(new Date(projectStart), new Date(targetDate)) || 1
-        const dayIndex = countBusinessDays(new Date(projectStart), new Date(date))
-        const metaAccumulated = Math.round((total / totalBusinessDays) * dayIndex)
-        
-        return {
-            date,
-            concluido: accumulatedCompleted,
-            meta: metaAccumulated
-        }
+    let accumulatedPlanned = 0
+
+    const chartData = allDates.map((date) => {
+      accumulatedPlanned += plannedByDate[date] || 0
+      accumulatedCompleted += completionsByDate[date] || 0
+
+      const projectStart = project?.startDate || (allDates[0] ? new Date(allDates[0]) : today)
+      const totalBusinessDays = countBusinessDays(new Date(projectStart), new Date(targetDate)) || 1
+      const dayIndex = countBusinessDays(new Date(projectStart), new Date(date))
+      const metaAccumulated = Math.round((total / totalBusinessDays) * dayIndex)
+
+      return {
+        date,
+        planejado: accumulatedPlanned,
+        concluido: accumulatedCompleted,
+        meta: metaAccumulated,
+      }
     })
     
     // --- TABELA DIÁRIA ---
     // Gerar tabela com: Data, Concluídos no Dia, Meta Acumulada, Saldo
-    const dailyTable = chartData.map((row, idx) => ({
+    const dailyTable = chartData.map((row) => ({
         date: row.date,
+        planned: plannedByDate[row.date] || 0,
         completed: completionsByDate[row.date] || 0,
         accumulated: row.concluido,
+        accumulatedPlanned: row.planejado,
         meta: row.meta,
         saldo: row.concluido - row.meta
     }))

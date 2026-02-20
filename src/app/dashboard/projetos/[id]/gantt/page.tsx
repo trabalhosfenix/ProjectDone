@@ -3,13 +3,11 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
-import { BarChart3, Calendar, ArrowLeft, Download } from 'lucide-react'
-import Link from 'next/link'
+import { Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProjectPageHeader } from "@/components/project/project-page-header"
 
@@ -25,56 +23,28 @@ export default function GanttPage() {
     loadTasks()
   }, [])
   
-  // ... (keeping loadTasks and handlers as is, they are below this block usually but I need to be careful not to replace them if they are in the range)
-  // Logic skipped for brevity in replacement, but I must match exact content if I replace.
-  // Actually, I can just fix the import at the top and the header usage in the return.
-  // Let's do 2 chunks if possible or 1 big chunk if files interact.
-  // `replace_file_content` supports single chunk.
-  
-  // I will fix the IMPORT first (top of file).
-  // Then fix the RETURN (bottom).
-  // Wait, I can't do multiple chunks with `replace_file_content` unless I use `multi_replace`.
-  // I will use `replace_file_content` to fix the Import first.
-  // Then another call/chunk for the JSX.
-  // Actually, `replace_file_content` only allows one block.
-  // I will use `multi_replace_file_content`? No, simpler to just run 2 tools or 1 wide tool?
-  // Let's use `multi_replace_file_content` since I made a mess in 2 places (top and bottom)? 
-  // No, previous edit inserted import in the middle of the file (line 90ish).
-  // So I need to delete that bad import AND add it to top AND fix the JSX.
-  // This is complex for a single replace.
-  
-  // Strategy:
-  // 1. MultiReplace to:
-  //    a) Add import at top.
-  //    b) Remove bad import at line 90.
-  //    c) Fix JSX at line 97.
-  
-  // Let's try `multi_replace_file_content`.
 
   const loadTasks = async () => {
     try {
-      // Buscar tarefas do projeto
-      const res = await fetch(`/api/projects/${projectId}/items`)
+      const res = await fetch(`/api/mpp/projects/${projectId}/gantt`)
       const data = await res.json()
-      
-      if (data.success && data.data) {
-        // Converter para formato do Gantt Split
-        const ganttTasks = data.data
-          .filter((item: any) => item.datePlanned && item.datePlannedEnd)
-          .map((item: any) => ({
-            id: item.id,
-            name: item.task || 'Sem nome',
-            start: new Date(item.datePlanned).toISOString().split('T')[0],
-            end: new Date(item.datePlannedEnd).toISOString().split('T')[0],
-            progress: item.metadata?.progress || 0,
-            dependencies: '',
-            wbs: item.wbs,
-            responsible: item.responsible,
-            statusLabel: item.status
-          }))
-        
-        setTasks(ganttTasks)
-      }
+
+      const sourceTasks = data?.data || data?.items || data?.tasks || []
+      const ganttTasks = sourceTasks
+        .filter((item: any) => (item.datePlanned || item.start) && (item.datePlannedEnd || item.finish || item.end))
+        .map((item: any) => ({
+          id: String(item.id || item.uid),
+          name: item.task || item.name || 'Sem nome',
+          start: new Date(item.datePlanned || item.start).toISOString().split('T')[0],
+          end: new Date(item.datePlannedEnd || item.finish || item.end).toISOString().split('T')[0],
+          progress: item.metadata?.progress ?? item.percent_complete ?? 0,
+          dependencies: item.dependencies || '',
+          wbs: item.wbs,
+          responsible: item.responsible,
+          statusLabel: item.status
+        }))
+
+      setTasks(ganttTasks)
     } catch (e) {
       console.error('Erro ao carregar tarefas:', e)
       toast.error('Erro ao carregar cronograma')

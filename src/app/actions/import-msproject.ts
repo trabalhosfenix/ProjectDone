@@ -1,46 +1,18 @@
 'use server'
 
-import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
-import { writeFile, unlink, mkdir, readFile } from 'fs/promises'
-import { join } from 'path'
-import { randomUUID } from 'crypto'
-import { exec } from 'child_process'
-import { promisify } from 'util'
-import { addBusinessDays } from 'date-fns'
+import { MPP_API_BASE_URL } from '@/lib/mpp-api'
 
-const execAsync = promisify(exec)
-
-// Interface para o formato JSON que o MPXJ gera
-interface MPXJTask {
-  id: number
-  name: string
-  wbs?: string
-  start?: string
-  finish?: string
-  duration?: string
-  percentComplete?: number
-  predecessors?: string
-  resourceNames?: string
-  notes?: string
-  milestone?: boolean
-  summary?: boolean
-}
-
-interface MPXJProject {
-  name?: string
-  tasks: MPXJTask[]
+async function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
- * Importa um arquivo Microsoft Project (.mpp, .mpx, .xml) usando MPXJ via Java CLI
+ * Importação de MS Project delegada integralmente para MPP Platform API.
+ *
+ * Sem parsing local no Next.js.
  */
 export async function importMSProject(formData: FormData) {
-  const tempId = randomUUID()
-  const tempDir = process.platform === 'win32' ? 'C:\\temp' : '/tmp'
-  const inputPath = join(tempDir, `input_${tempId}.mpp`)
-  const outputPath = join(tempDir, `output_${tempId}.json`)
-
   try {
     const projectId = formData.get('projectId') as string
     const file = formData.get('file') as File
@@ -49,264 +21,93 @@ export async function importMSProject(formData: FormData) {
       return { success: false, error: 'Projeto ou arquivo não fornecido' }
     }
 
-    // Validar extensão
     const fileName = file.name.toLowerCase()
     const validExtensions = ['.mpp', '.mpx', '.xml', '.mpt']
-    const hasValidExt = validExtensions.some(ext => fileName.endsWith(ext))
+    const hasValidExt = validExtensions.some((ext) => fileName.endsWith(ext))
     if (!hasValidExt) {
-      return { 
-        success: false, 
-        error: `Formato não suportado. Use: ${validExtensions.join(', ')}` 
+      return {
+        success: false,
+        error: `Formato não suportado. Use: ${validExtensions.join(', ')}`,
       }
     }
 
-    // 1. Garantir diretório temp existe
-    try {
-      await mkdir(tempDir, { recursive: true })
-    } catch (e) {
-      // Ignore if exists
-    }
+    const payload = new FormData()
+    payload.append('file', file)
+    payload.append('legacy_project_id', projectId)
 
-    // 2. Salvar arquivo temporariamente
-    const buffer = Buffer.from(await file.arrayBuffer())
-    await writeFile(inputPath, buffer)
-
-    // 3. Executar conversão MPXJ
-    // O script Python ou Java irá converter o .mpp para JSON
-    const binPath = join(process.cwd(), 'bin')
-    const jarPath = join(binPath, 'mpxj-converter.jar')
-    
-    let jsonData: MPXJProject
-    
-    try {
-      // Tentar usar Java MPXJ
-      const { stdout, stderr } = await execAsync(
-        `java -jar "${jarPath}" "${inputPath}" "${outputPath}"`,
-        { timeout: 60000 } // 60 segundos timeout
-      )
-      
-      if (stderr && !stderr.includes('WARNING')) {
-        console.error('MPXJ stderr:', stderr)
-      }
-
-      // Ler JSON gerado
-      const jsonContent = await readFile(outputPath, 'utf-8')
-      jsonData = JSON.parse(jsonContent)
-      
-    } catch (javaError: any) {
-      // Se Java falhar, tentar fallback com parsing XML (se for arquivo XML do Project)
-      if (fileName.endsWith('.xml')) {
-        return await importProjectXML(formData, buffer, projectId)
-      }
-      
-      console.error('MPXJ Java error:', javaError.message)
-      return { 
-        success: false, 
-        error: 'Conversão falhou. Verifique se Java está instalado na VPS ou use formato .xml do MS Project.',
-        details: javaError.message
-      }
-    }
-
-    // 4. Validar membros do projeto para recursos
-    const projectMembers = await prisma.projectMember.findMany({
-      where: { projectId },
-      include: { user: true }
-    })
-    const validMemberNames = new Set(
-      projectMembers
-        .map(m => m.user.name?.toLowerCase())
-        .filter(Boolean)
-    )
-    projectMembers.forEach(m => {
-      if (m.user.email) validMemberNames.add(m.user.email.toLowerCase())
+    const startResponse = await fetch(`${MPP_API_BASE_URL}/v1/projects/import/mpp`, {
+      method: 'POST',
+      body: payload,
+      cache: 'no-store',
     })
 
-    // 5. Criar itens no banco
-    const createdItemsMap = new Map<number, string>() // MPXJ ID -> DB UUID
-    const dependenciesToProcess: { dbId: string; preds: string }[] = []
-    const warnings: string[] = []
+    const startBody = await startResponse.json()
 
-    for (const task of jsonData.tasks || []) {
-      if (!task.name || task.summary) continue // Pular tarefas resumo (WBS headers)
-
-      // Parse datas
-      const datePlanned = task.start ? new Date(task.start) : null
-      const datePlannedEnd = task.finish ? new Date(task.finish) : null
-      
-      // Parse duração (formato "5 days" ou "5d")
-      let duration = 0
-      if (task.duration) {
-        const match = task.duration.toString().match(/[\d.]+/)
-        if (match) duration = parseFloat(match[0])
+    if (!startResponse.ok) {
+      return {
+        success: false,
+        error: startBody.error || 'Falha ao iniciar importação na MPP Platform API',
+        details: startBody,
       }
+    }
 
-      // Validar recurso
-      let responsible = task.resourceNames || null
-      if (responsible) {
-        const checkName = responsible.split(';')[0].trim().toLowerCase()
-        if (!validMemberNames.has(checkName)) {
-          warnings.push(`Recurso "${responsible}" na tarefa "${task.name}" não encontrado.`)
-          responsible = null
-        }
+    const jobId = startBody.job_id || startBody.jobId
+    const importedProjectId = startBody.project_id || startBody.projectId
+
+    if (!jobId) {
+      revalidatePath(`/dashboard/projetos/${projectId}`)
+      return {
+        success: true,
+        message: 'Importação iniciada com sucesso.',
+        projectId: importedProjectId,
       }
+    }
 
-      // Status baseado em % concluído
-      const progress = task.percentComplete || 0
-      const status = progress >= 100 ? 'Concluído' : progress > 0 ? 'Em Andamento' : 'A Fazer'
-
-      const item = await prisma.projectItem.create({
-        data: {
-          projectId,
-          task: task.name,
-          originSheet: 'MSPROJECT_IMPORT',
-          wbs: task.wbs || null,
-          status,
-          responsible,
-          datePlanned,
-          datePlannedEnd,
-          duration,
-          metadata: {
-            progress,
-            mpxjId: task.id,
-            milestone: task.milestone,
-            notes: task.notes
-          }
-        }
+    // Polling server-side simples para manter compatibilidade do retorno desta action.
+    const timeoutAt = Date.now() + 120_000
+    while (Date.now() < timeoutAt) {
+      const jobResponse = await fetch(`${MPP_API_BASE_URL}/v1/jobs/${jobId}`, {
+        cache: 'no-store',
       })
+      const jobBody = await jobResponse.json()
+      const status = String(jobBody.status || '').toLowerCase()
 
-      createdItemsMap.set(task.id, item.id)
-
-      if (task.predecessors) {
-        dependenciesToProcess.push({ dbId: item.id, preds: task.predecessors })
-      }
-    }
-
-    // 6. Processar predecessores
-    let depCount = 0
-    for (const dep of dependenciesToProcess) {
-      // Formato: "1FS", "2SS+1d", "3,4"
-      const predParts = dep.preds.split(/[;,]/)
-      for (const part of predParts) {
-        const match = part.trim().match(/^(\d+)/)
-        if (match) {
-          const predMpxjId = parseInt(match[1])
-          const predDbId = createdItemsMap.get(predMpxjId)
-          if (predDbId) {
-            await prisma.projectItem.update({
-              where: { id: dep.dbId },
-              data: {
-                predecessors: {
-                  connect: { id: predDbId }
-                }
-              }
-            })
-            depCount++
-          }
+      if (['completed', 'success', 'done'].includes(status)) {
+        revalidatePath(`/dashboard/projetos/${projectId}`)
+        return {
+          success: true,
+          message: 'Importação concluída com sucesso.',
+          jobId,
+          projectId: importedProjectId,
+          stats: {
+            imported: jobBody.imported || undefined,
+          },
         }
       }
-    }
 
-    // 7. Limpar arquivos temporários
-    try {
-      await unlink(inputPath)
-      await unlink(outputPath)
-    } catch (e) {
-      // Ignore cleanup errors
-    }
+      if (['failed', 'error'].includes(status)) {
+        return {
+          success: false,
+          error: jobBody.error || 'Falha ao processar arquivo .mpp',
+          details: jobBody,
+        }
+      }
 
-    revalidatePath(`/dashboard/projetos/${projectId}`)
+      await sleep(1500)
+    }
 
     return {
-      success: true,
-      count: createdItemsMap.size,
-      message: `${createdItemsMap.size} tarefas importadas e ${depCount} dependências conectadas do MS Project.`,
-      stats: {
-        imported: createdItemsMap.size,
-        dependencies: depCount,
-        warnings: warnings.slice(0, 10)
-      }
+      success: false,
+      error: 'Tempo de processamento excedido. Consulte o status do job.',
+      jobId,
+      projectId: importedProjectId,
     }
-
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Erro na importação MS Project:', error)
-    
-    // Limpar arquivos em caso de erro
-    try {
-      await unlink(inputPath)
-      await unlink(outputPath)
-    } catch (e) {
-      // Ignore
-    }
-    
-    return { 
-      success: false, 
-      error: 'Falha ao processar arquivo do MS Project',
-      details: error.message
-    }
-  }
-}
-
-/**
- * Fallback: Importa XML do MS Project sem precisar de Java
- */
-async function importProjectXML(formData: FormData, buffer: Buffer, projectId: string) {
-  try {
-    const xmlContent = buffer.toString('utf-8')
-    
-    // Parse básico do XML do MS Project
-    // O formato XML do MS Project tem estrutura bem definida
-    const tasks: { name: string; start?: Date; finish?: Date; wbs?: string }[] = []
-    
-    // Regex simples para extrair tarefas do XML do Project
-    const taskMatches = xmlContent.matchAll(/<Task>[\s\S]*?<\/Task>/g)
-    
-    for (const match of taskMatches) {
-      const taskXml = match[0]
-      
-      const nameMatch = taskXml.match(/<Name>([^<]+)<\/Name>/)
-      const startMatch = taskXml.match(/<Start>([^<]+)<\/Start>/)
-      const finishMatch = taskXml.match(/<Finish>([^<]+)<\/Finish>/)
-      const wbsMatch = taskXml.match(/<WBS>([^<]+)<\/WBS>/)
-      const summaryMatch = taskXml.match(/<Summary>1<\/Summary>/)
-      
-      if (nameMatch && !summaryMatch) {
-        tasks.push({
-          name: nameMatch[1],
-          start: startMatch ? new Date(startMatch[1]) : undefined,
-          finish: finishMatch ? new Date(finishMatch[1]) : undefined,
-          wbs: wbsMatch ? wbsMatch[1] : undefined
-        })
-      }
-    }
-
-    // Criar itens
-    let created = 0
-    for (const task of tasks) {
-      await prisma.projectItem.create({
-        data: {
-          projectId,
-          task: task.name,
-          originSheet: 'MSPROJECT_XML_IMPORT',
-          wbs: task.wbs || null,
-          status: 'A Fazer',
-          datePlanned: task.start || null,
-          datePlannedEnd: task.finish || null
-        }
-      })
-      created++
-    }
-
-    revalidatePath(`/dashboard/projetos/${projectId}`)
-
     return {
-      success: true,
-      count: created,
-      message: `${created} tarefas importadas do XML do MS Project.`,
-      stats: { imported: created, dependencies: 0, warnings: [] }
+      success: false,
+      error: 'Falha ao processar arquivo do MS Project',
+      details: error instanceof Error ? error.message : String(error),
     }
-
-  } catch (error: any) {
-    console.error('Erro no fallback XML:', error)
-    return { success: false, error: 'Falha ao processar XML do MS Project' }
   }
 }
