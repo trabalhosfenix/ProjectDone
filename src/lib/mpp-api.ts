@@ -1,14 +1,85 @@
 export const MPP_API_BASE_URL = process.env.MPP_API_BASE_URL || 'http://localhost:8000'
+export const MPP_TENANT_ID = process.env.MPP_TENANT_ID || 'default'
+
+const DEFAULT_MPP_API_BASE_URLS = [
+  'http://mpp-api:8000',
+  'http://host.docker.internal:8000',
+  'http://localhost:8000',
+]
+
+interface MppRawFetchOptions {
+  timeoutMs?: number
+}
+
+export function getMppApiBaseUrls(): string[] {
+  const explicitList = (process.env.MPP_API_BASE_URLS || '')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean)
+
+  const candidates = [
+    ...explicitList,
+    MPP_API_BASE_URL,
+    ...DEFAULT_MPP_API_BASE_URLS,
+  ]
+
+  return Array.from(new Set(candidates.map((url) => url.replace(/\/$/, ''))))
+}
+
+function withTimeoutSignal(timeoutMs: number) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  return { signal: controller.signal, clear: () => clearTimeout(timeout) }
+}
+
+function withMppHeaders(headersInit?: HeadersInit) {
+  const headers = new Headers(headersInit)
+
+  if (!headers.has('Accept')) {
+    headers.set('Accept', 'application/json')
+  }
+
+  if (!headers.has('x-tenant-id')) {
+    headers.set('x-tenant-id', MPP_TENANT_ID)
+  }
+
+  return headers
+}
+
+export async function mppFetchRaw(
+  path: string,
+  init?: RequestInit,
+  options?: MppRawFetchOptions
+): Promise<Response> {
+  const timeoutMs = options?.timeoutMs ?? 30_000
+  const baseUrls = getMppApiBaseUrls()
+  const errors: string[] = []
+
+  for (const baseUrl of baseUrls) {
+    const url = `${baseUrl}${path}`
+    const { signal, clear } = withTimeoutSignal(timeoutMs)
+
+    try {
+      const response = await fetch(url, {
+        ...init,
+        headers: withMppHeaders(init?.headers),
+        signal,
+        cache: 'no-store',
+      })
+      clear()
+      return response
+    } catch (error) {
+      clear()
+      const message = error instanceof Error ? error.message : String(error)
+      errors.push(`${baseUrl}: ${message}`)
+    }
+  }
+
+  throw new Error(`MPP API indisponível. Tentativas: ${errors.join(' | ')}`)
+}
 
 async function mppFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${MPP_API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/json',
-      ...(init?.headers || {}),
-    },
-    cache: 'no-store',
-  })
+  const response = await mppFetchRaw(path, init)
 
   if (!response.ok) {
     const text = await response.text()

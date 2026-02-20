@@ -17,7 +17,7 @@ export default async function DashboardPage() {
       where: {
         OR: [
           { statusId: null },
-          { status: { is: { label: { not: 'Resolvida' } } } },
+          { status: { is: { isFinal: false } } },
         ],
       },
     })
@@ -32,8 +32,8 @@ export default async function DashboardPage() {
   return (
     <div className="h-screen">
       <AdminPanel 
-        initialItems={localItems}
-        stats={combinedStats}
+        initialItems={items}
+        stats={stats}
         curvaSData={curvaSData}
         recentActivities={recentActivities}
         statusOptions={statusOptions.length > 0 ? statusOptions : [
