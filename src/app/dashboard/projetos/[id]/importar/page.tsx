@@ -38,6 +38,16 @@ export default function ImportarPage() {
   const [fileName, setFileName] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
+  const persistMppLink = (legacyProjectId: string, mppProjectId: string) => {
+    try {
+      const current = JSON.parse(sessionStorage.getItem('mppProjectMap') || '{}')
+      current[legacyProjectId] = mppProjectId
+      sessionStorage.setItem('mppProjectMap', JSON.stringify(current))
+    } catch {
+      // noop
+    }
+  }
+
   const activeTab = useMemo(() => {
     const type = searchParams.get('type') || 'excel'
     if (mode === 'export') return type === 'msproject' ? 'export-msproject' : 'export-excel'
@@ -83,9 +93,15 @@ export default function ImportarPage() {
       setProgress(Number(data.progress || data.percent || 0))
       setMessage(data.message || data.error || '')
 
+      const resolvedProjectId = data.project_id || data.projectId
+      if (resolvedProjectId) {
+        persistMppLink(projectId, String(resolvedProjectId))
+      }
+
       if (nextStatus === 'completed') {
         toast.success('Importação concluída com sucesso!')
-        router.push(`/dashboard/projetos/${projectId}/gantt`)
+        const targetMppProjectId = resolvedProjectId || projectId
+        router.push(`/dashboard/projetos/${projectId}/gantt?mppProjectId=${targetMppProjectId}`)
         return
       }
 
@@ -130,10 +146,14 @@ export default function ImportarPage() {
         throw new Error(data.error || 'Falha ao iniciar importação')
       }
 
-      setJobId(String(data.job_id))
+      setJobId(String(data.job_id || data.jobId))
+      const resolvedProjectId = data.project_id || data.projectId
+      if (resolvedProjectId) {
+        persistMppLink(projectId, String(resolvedProjectId))
+      }
       setStatus('processing')
       setMessage('Processando arquivo no backend...')
-      await pollJob(String(data.job_id))
+      await pollJob(String(data.job_id || data.jobId))
     } catch (error) {
       setStatus('error')
       setMessage(error instanceof Error ? error.message : 'Erro de integração')

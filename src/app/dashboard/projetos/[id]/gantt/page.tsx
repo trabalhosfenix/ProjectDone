@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
@@ -62,7 +62,9 @@ const normalizeDependencies = (value: unknown) => {
 
 export default function GanttPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const projectId = params.id as string
+  const searchParamsKey = searchParams.toString()
   
   const [tasks, setTasks] = useState<GanttSplitTask[]>([])
   const [loading, setLoading] = useState(true)
@@ -70,13 +72,49 @@ export default function GanttPage() {
 
   useEffect(() => {
     loadTasks()
-  }, [])
+  }, [projectId, searchParamsKey])
   
 
   const loadTasks = async () => {
     try {
-      const res = await fetch(`/api/mpp/projects/${projectId}/gantt`)
-      const data = await res.json()
+      const mppProjectIdFromQuery = searchParams.get('mppProjectId')
+      const mappedMppProjectId = (() => {
+        try {
+          const map = JSON.parse(sessionStorage.getItem('mppProjectMap') || '{}')
+          return map?.[projectId] as string | undefined
+        } catch {
+          return undefined
+        }
+      })()
+
+      const candidateProjectIds = Array.from(
+        new Set([
+          mppProjectIdFromQuery,
+          mappedMppProjectId,
+          projectId,
+        ].filter(Boolean) as string[])
+      )
+
+      let data: any = null
+      let lastError: Error | null = null
+
+      for (const candidateId of candidateProjectIds) {
+        try {
+          const res = await fetch(`/api/mpp/projects/${candidateId}/gantt`, { cache: 'no-store' })
+          if (!res.ok) {
+            const body = await res.text()
+            throw new Error(`HTTP ${res.status} - ${body}`)
+          }
+          data = await res.json()
+          break
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error))
+        }
+      }
+
+      if (!data) {
+        throw lastError || new Error('Não foi possível buscar dados de Gantt')
+      }
 
       const sourceTasks: RawGanttTask[] = data?.data || data?.items || data?.tasks || []
 
@@ -101,13 +139,21 @@ export default function GanttPage() {
       })
 
       const datedTasks = normalized.filter((item) => item.start && item.end)
-      const fallbackStart = datedTasks.length > 0 ? datedTasks[0].start : null
-      const fallbackEnd = datedTasks.length > 0 ? datedTasks[datedTasks.length - 1].end : null
+      const datedStarts = datedTasks.map((task) => new Date(task.start as string).getTime())
+      const datedEnds = datedTasks.map((task) => new Date(task.end as string).getTime())
+
+      const fallbackStart =
+        datedStarts.length > 0 ? new Date(Math.min(...datedStarts)).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+      const fallbackEnd =
+        datedEnds.length > 0 ? new Date(Math.max(...datedEnds)).toISOString().slice(0, 10) : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
       const ganttTasks = normalized
-        .map((item) => {
-          const start = item.start || item.end || fallbackStart
-          const end = item.end || item.start || fallbackEnd
+        .map((item, index) => {
+          const syntheticStart = new Date(new Date(fallbackStart).getTime() + index * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+          const syntheticEnd = new Date(new Date(syntheticStart).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+          const start = item.start || item.end || syntheticStart
+          const end = item.end || item.start || syntheticEnd
 
           if (!start || !end) {
             return null

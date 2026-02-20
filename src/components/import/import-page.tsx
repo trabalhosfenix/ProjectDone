@@ -30,6 +30,16 @@ export default function ImportProjectPage() {
   const [progress, setProgress] = useState(0)
   const [message, setMessage] = useState<string>('')
 
+  const persistMppLink = (legacyProjectId: string, mppProjectId: string) => {
+    try {
+      const current = JSON.parse(sessionStorage.getItem('mppProjectMap') || '{}')
+      current[legacyProjectId] = mppProjectId
+      sessionStorage.setItem('mppProjectMap', JSON.stringify(current))
+    } catch {
+      // noop
+    }
+  }
+
   const canUpload = useMemo(() => selectedFile && status !== 'uploading' && status !== 'processing', [selectedFile, status])
 
   const handleSelectFile = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,8 +75,9 @@ export default function ImportProjectPage() {
       setProgress(Number.isFinite(nextProgress) ? Math.max(0, Math.min(100, nextProgress)) : 0)
       setMessage(data.message || data.detail || data.error || '')
 
-      if (data.project_id) {
-        setProjectId(String(data.project_id))
+      const resolvedProjectId = data.project_id || data.projectId
+      if (resolvedProjectId) {
+        setProjectId(String(resolvedProjectId))
       }
 
       if (nextStatus === 'completed') {
@@ -108,8 +119,9 @@ export default function ImportProjectPage() {
       }
 
       setJobId(String(data.job_id))
-      if (data.project_id) {
-        setProjectId(String(data.project_id))
+      const resolvedProjectId = data.project_id || data.projectId
+      if (resolvedProjectId) {
+        setProjectId(String(resolvedProjectId))
       }
       setStatus('processing')
       setMessage(data.message || 'Arquivo recebido. Processando no backend...')
@@ -177,7 +189,13 @@ export default function ImportProjectPage() {
               {jobId && <p className="text-xs text-gray-500">Job ID: {jobId}</p>}
               {projectId && (
                 <div className="pt-2">
-                  <Button size="sm" onClick={() => router.push(`/dashboard/projetos/${projectId}/gantt`)}>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      persistMppLink(String(projectId), String(projectId))
+                      router.push(`/dashboard/projetos/${projectId}/gantt?mppProjectId=${projectId}`)
+                    }}
+                  >
                     Abrir Gantt do projeto
                   </Button>
                 </div>
