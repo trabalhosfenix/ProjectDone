@@ -7,60 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
-import { Calendar, Filter, Search } from 'lucide-react'
+import { Calendar, Filter, RefreshCw, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProjectPageHeader } from "@/components/project/project-page-header"
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-
-interface RawGanttTask {
-  id?: string
-  uid?: string | number
-  task?: string
-  name?: string
-  wbs?: string
-  start?: string | null
-  finish?: string | null
-  end?: string | null
-  datePlanned?: string | null
-  datePlannedEnd?: string | null
-  percent_complete?: number
-  metadata?: { progress?: number }
-  dependencies?: unknown
-  responsible?: string
-  status?: string
-  outline_level?: number
-  is_summary?: boolean
-}
-
-const toIsoDate = (value?: string | null) => {
-  if (!value) return null
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return null
-  return parsed.toISOString().slice(0, 10)
-}
-
-const normalizeDependencies = (value: unknown) => {
-  if (!value) return ''
-  if (typeof value === 'string') return value
-
-  if (Array.isArray(value)) {
-    const depIds = value
-      .map((dep) => {
-        if (typeof dep === 'string' || typeof dep === 'number') return String(dep)
-        if (dep && typeof dep === 'object') {
-          const maybe = dep as Record<string, unknown>
-          return String(maybe.id || maybe.predecessor_id || maybe.predecessorId || '').trim()
-        }
-        return ''
-      })
-      .filter(Boolean)
-
-    return depIds.join(',')
-  }
-
-  return ''
-}
+import { Button } from '@/components/ui/button'
 
 interface RawGanttTask {
   id?: string
@@ -124,6 +76,8 @@ export default function GanttPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [responsibleFilter, setResponsibleFilter] = useState('all')
   const [hideSummary, setHideSummary] = useState(false)
+  const [linkedMppProjectId, setLinkedMppProjectId] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     loadTasks()
@@ -133,6 +87,21 @@ export default function GanttPage() {
   const loadTasks = async () => {
     try {
       const mppProjectIdFromQuery = searchParams.get('mppProjectId')
+      const contextMppProjectId = await (async () => {
+        try {
+          const contextResponse = await fetch(`/api/mpp/project-context/${projectId}`, { cache: 'no-store' })
+          if (!contextResponse.ok) return undefined
+          const context = await contextResponse.json()
+          const mppId = context?.mppProjectId ? String(context.mppProjectId) : undefined
+          if (mppId) {
+            setLinkedMppProjectId(mppId)
+          }
+          return mppId
+        } catch {
+          return undefined
+        }
+      })()
+
       const mappedMppProjectId = (() => {
         try {
           const map = JSON.parse(sessionStorage.getItem('mppProjectMap') || '{}')
@@ -145,6 +114,7 @@ export default function GanttPage() {
       const candidateProjectIds = Array.from(
         new Set([
           mppProjectIdFromQuery,
+          contextMppProjectId,
           mappedMppProjectId,
           projectId,
         ].filter(Boolean) as string[])
@@ -229,6 +199,11 @@ export default function GanttPage() {
         .filter((item): item is GanttSplitTask => Boolean(item))
 
       setTasks(ganttTasks)
+
+      if (!linkedMppProjectId && candidateProjectIds.length > 0) {
+        const best = candidateProjectIds.find((id) => id !== projectId) || candidateProjectIds[0]
+        setLinkedMppProjectId(best)
+      }
     } catch (e) {
       console.error('Erro ao carregar tarefas:', e)
       toast.error('Erro ao carregar cronograma')
@@ -307,6 +282,39 @@ export default function GanttPage() {
     }
   }
 
+  const handleSyncNow = async () => {
+    const mppProjectId = linkedMppProjectId || searchParams.get('mppProjectId')
+
+    if (!mppProjectId) {
+      toast.error('Projeto MPP não vinculado para sincronização')
+      return
+    }
+
+    try {
+      setSyncing(true)
+      const response = await fetch('/api/mpp/sync-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mppProjectId,
+          localProjectId: projectId,
+        }),
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Falha ao sincronizar projeto')
+      }
+
+      toast.success(`Sincronização concluída (${result.importedTasks || 0} tarefas atualizadas)`)
+      await loadTasks()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao sincronizar projeto')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <div className="h-full bg-gray-50 flex flex-col">
       <ProjectDetailTabs projectId={projectId} />
@@ -319,6 +327,10 @@ export default function GanttPage() {
              projectId={projectId}
         >
           <div className="flex items-center gap-4">
+            <Button variant="outline" onClick={handleSyncNow} disabled={syncing || !linkedMppProjectId}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+              Sincronizar MPP
+            </Button>
             <Select value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
               <SelectTrigger className="w-[150px]">
                 <Calendar className="w-4 h-4 mr-2" />
