@@ -21,6 +21,7 @@ COPY . .
 
 # Build da aplicação
 ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run check:mpp-api
 RUN npm run build
 
 # Production Stage
