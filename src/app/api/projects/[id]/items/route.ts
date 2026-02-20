@@ -8,7 +8,8 @@ export async function GET(
   try {
     const { id } = await params
     const { searchParams } = new URL(request.url)
-    const items = await getMppTasks(id, searchParams)
+    const tenantId = request.headers.get('x-tenant-id') || undefined
+    const items = await getMppTasks(id, searchParams, { tenantId })
     return NextResponse.json({ success: true, data: items })
   } catch (error) {
     console.error('Erro ao buscar itens:', error)

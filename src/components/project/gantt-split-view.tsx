@@ -1,10 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { GanttChart } from "./gantt-chart";
-import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 
 export interface GanttSplitTask {
   id: string;
@@ -34,23 +31,21 @@ export function GanttSplitView({
   onProgressChange,
   viewMode = "Week",
 }: GanttSplitViewProps) {
-  // Sync scrolling
-  const tableRef = useRef<HTMLDivElement>(null);
-  const ganttWrapperRef = useRef<HTMLDivElement>(null);
-  
-  // Constants for alignment
-  const HEADER_HEIGHT = 60; // Approximate header height of Frappe Gantt
-  const ROW_HEIGHT = 38; // Default frappe bar height + padding is around this, assume we config it.
-  // Actually frappe defaults: bar_height 20, padding 18 -> 38px total row height? 
-  // Let's set frappe options specifically to match our table.
-  const FRAPPE_BAR_HEIGHT = 20;
-  const FRAPPE_PADDING = 18; // Total 38px
-  
   // Status Logic Helper
+  const safeDate = (value: string) => {
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+
+  const formatDate = (value: string) => {
+    const date = safeDate(value)
+    return date ? format(date, 'dd/MM/yy') : '--/--/--'
+  }
+
   const getStatusBadge = (task: GanttSplitTask) => {
     const now = new Date();
-    const start = new Date(task.start);
-    const end = new Date(task.end);
+    const start = safeDate(task.start);
+    const end = safeDate(task.end);
     const progress = task.progress;
 
     if (progress >= 100) {
@@ -59,12 +54,12 @@ export function GanttSplitView({
     
     // Check overdue
     // If end date is before today (ignoring time for simplicity or matching day)
-    if (end < now) {
+    if (end && end < now) {
        return <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">Atrasado</span>;
     }
 
     // Check in progress
-    if (start <= now && end >= now) {
+    if (start && end && start <= now && end >= now) {
         return <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700">Em andamento</span>;
     }
 
@@ -122,10 +117,10 @@ export function GanttSplitView({
                         {task.responsible ? task.responsible.split(' ')[0] : '-'}
                     </div>
                     <div className="w-20 px-1 text-center h-full flex items-center justify-center border-r text-xs text-gray-500">
-                        {format(new Date(task.start), 'dd/MM/yy')}
+                        {formatDate(task.start)}
                     </div>
                     <div className="w-20 px-1 text-center h-full flex items-center justify-center border-r text-xs text-gray-500">
-                        {format(new Date(task.end), 'dd/MM/yy')}
+                        {formatDate(task.end)}
                     </div>
                     <div className="w-12 px-1 text-center h-full flex items-center justify-center border-r text-xs font-semibold text-gray-700">
                         {task.progress}%

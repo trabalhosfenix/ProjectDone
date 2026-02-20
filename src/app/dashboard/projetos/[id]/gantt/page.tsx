@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
@@ -11,9 +11,60 @@ import { Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProjectPageHeader } from "@/components/project/project-page-header"
 
+interface RawGanttTask {
+  id?: string
+  uid?: string | number
+  task?: string
+  name?: string
+  wbs?: string
+  start?: string | null
+  finish?: string | null
+  end?: string | null
+  datePlanned?: string | null
+  datePlannedEnd?: string | null
+  percent_complete?: number
+  metadata?: { progress?: number }
+  dependencies?: unknown
+  responsible?: string
+  status?: string
+  outline_level?: number
+  is_summary?: boolean
+}
+
+const toIsoDate = (value?: string | null) => {
+  if (!value) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString().slice(0, 10)
+}
+
+const normalizeDependencies = (value: unknown) => {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+
+  if (Array.isArray(value)) {
+    const depIds = value
+      .map((dep) => {
+        if (typeof dep === 'string' || typeof dep === 'number') return String(dep)
+        if (dep && typeof dep === 'object') {
+          const maybe = dep as Record<string, unknown>
+          return String(maybe.id || maybe.predecessor_id || maybe.predecessorId || '').trim()
+        }
+        return ''
+      })
+      .filter(Boolean)
+
+    return depIds.join(',')
+  }
+
+  return ''
+}
+
 export default function GanttPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const projectId = params.id as string
+  const searchParamsKey = searchParams.toString()
   
   const [tasks, setTasks] = useState<GanttSplitTask[]>([])
   const [loading, setLoading] = useState(true)
@@ -21,28 +72,106 @@ export default function GanttPage() {
 
   useEffect(() => {
     loadTasks()
-  }, [])
+  }, [projectId, searchParamsKey])
   
 
   const loadTasks = async () => {
     try {
-      const res = await fetch(`/api/mpp/projects/${projectId}/gantt`)
-      const data = await res.json()
+      const mppProjectIdFromQuery = searchParams.get('mppProjectId')
+      const mappedMppProjectId = (() => {
+        try {
+          const map = JSON.parse(sessionStorage.getItem('mppProjectMap') || '{}')
+          return map?.[projectId] as string | undefined
+        } catch {
+          return undefined
+        }
+      })()
 
-      const sourceTasks = data?.data || data?.items || data?.tasks || []
-      const ganttTasks = sourceTasks
-        .filter((item: any) => (item.datePlanned || item.start) && (item.datePlannedEnd || item.finish || item.end))
-        .map((item: any) => ({
-          id: String(item.id || item.uid),
+      const candidateProjectIds = Array.from(
+        new Set([
+          mppProjectIdFromQuery,
+          mappedMppProjectId,
+          projectId,
+        ].filter(Boolean) as string[])
+      )
+
+      let data: any = null
+      let lastError: Error | null = null
+
+      for (const candidateId of candidateProjectIds) {
+        try {
+          const res = await fetch(`/api/mpp/projects/${candidateId}/gantt`, { cache: 'no-store' })
+          if (!res.ok) {
+            const body = await res.text()
+            throw new Error(`HTTP ${res.status} - ${body}`)
+          }
+          data = await res.json()
+          break
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error))
+        }
+      }
+
+      if (!data) {
+        throw lastError || new Error('Não foi possível buscar dados de Gantt')
+      }
+
+      const sourceTasks: RawGanttTask[] = data?.data || data?.items || data?.tasks || []
+
+      const normalized = sourceTasks.map((item, index) => {
+        const start = toIsoDate(item.datePlanned || item.start)
+        const end = toIsoDate(item.datePlannedEnd || item.finish || item.end)
+        const progress = item.metadata?.progress ?? item.percent_complete ?? 0
+
+        return {
+          id: String(item.id || item.uid || `task-${index}`),
           name: item.task || item.name || 'Sem nome',
-          start: new Date(item.datePlanned || item.start).toISOString().split('T')[0],
-          end: new Date(item.datePlannedEnd || item.finish || item.end).toISOString().split('T')[0],
-          progress: item.metadata?.progress ?? item.percent_complete ?? 0,
-          dependencies: item.dependencies || '',
           wbs: item.wbs,
+          start,
+          end,
+          progress: typeof progress === 'number' ? (progress > 1 ? progress : progress * 100) : 0,
+          dependencies: normalizeDependencies(item.dependencies),
           responsible: item.responsible,
-          statusLabel: item.status
-        }))
+          statusLabel: item.status,
+          outline_level: item.outline_level,
+          is_summary: item.is_summary,
+        }
+      })
+
+      const datedTasks = normalized.filter((item) => item.start && item.end)
+      const datedStarts = datedTasks.map((task) => new Date(task.start as string).getTime())
+      const datedEnds = datedTasks.map((task) => new Date(task.end as string).getTime())
+
+      const fallbackStart =
+        datedStarts.length > 0 ? new Date(Math.min(...datedStarts)).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+      const fallbackEnd =
+        datedEnds.length > 0 ? new Date(Math.max(...datedEnds)).toISOString().slice(0, 10) : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+      const ganttTasks = normalized
+        .map((item, index) => {
+          const syntheticStart = new Date(new Date(fallbackStart).getTime() + index * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+          const syntheticEnd = new Date(new Date(syntheticStart).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+          const start = item.start || item.end || syntheticStart
+          const end = item.end || item.start || syntheticEnd
+
+          if (!start || !end) {
+            return null
+          }
+
+          return {
+            id: item.id,
+            name: item.name,
+            start,
+            end,
+            progress: Math.max(0, Math.min(100, item.progress)),
+            dependencies: item.dependencies,
+            wbs: item.wbs,
+            responsible: item.responsible,
+            statusLabel: item.statusLabel,
+          }
+        })
+        .filter((item): item is GanttSplitTask => Boolean(item))
 
       setTasks(ganttTasks)
     } catch (e) {
