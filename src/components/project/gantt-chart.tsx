@@ -35,6 +35,13 @@ export function GanttChart({
   const ganttRef = useRef<any>(null)
   const [isClient, setIsClient] = useState(false)
 
+  const normalizeDependencies = (value: GanttTask['dependencies']) => {
+    if (!value) return ''
+    return typeof value === 'string' ? value : ''
+  }
+
+  const isValidDate = (value: string) => !Number.isNaN(new Date(value).getTime())
+
   useEffect(() => {
     setIsClient(true)
   }, [])
@@ -51,14 +58,20 @@ export function GanttChart({
     containerRef.current.appendChild(svg)
 
     // Formatar tarefas para o Frappe Gantt
-    const formattedTasks = tasks.map(task => ({
-      id: task.id,
-      name: task.name,
-      start: task.start,
-      end: task.end,
-      progress: task.progress || 0,
-      dependencies: task.dependencies || ''
-    }))
+    const formattedTasks = tasks
+      .filter((task) => isValidDate(task.start) && isValidDate(task.end))
+      .map(task => ({
+        id: task.id,
+        name: task.name,
+        start: task.start,
+        end: task.end,
+        progress: task.progress || 0,
+        dependencies: normalizeDependencies(task.dependencies)
+      }))
+
+    if (formattedTasks.length === 0) {
+      return
+    }
 
     try {
       ganttRef.current = new Gantt('#gantt-chart', formattedTasks, {
