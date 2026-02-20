@@ -135,6 +135,7 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
 
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('projectId', projectId)
 
     try {
       const response = await fetch('/api/mpp/import-mpp', {
