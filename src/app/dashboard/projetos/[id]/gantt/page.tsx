@@ -194,6 +194,11 @@ export default function GanttPage() {
         .filter((item): item is GanttSplitTask => Boolean(item))
 
       setTasks(ganttTasks)
+
+      if (!linkedMppProjectId && candidateProjectIds.length > 0) {
+        const best = candidateProjectIds.find((id) => id !== projectId) || candidateProjectIds[0]
+        setLinkedMppProjectId(best)
+      }
     } catch (e) {
       console.error('Erro ao carregar tarefas:', e)
       toast.error('Erro ao carregar cronograma')
@@ -269,6 +274,39 @@ export default function GanttPage() {
       toast.success('Progresso atualizado!')
     } catch (e) {
       toast.error('Erro ao atualizar progresso')
+    }
+  }
+
+  const handleSyncNow = async () => {
+    const mppProjectId = linkedMppProjectId || searchParams.get('mppProjectId')
+
+    if (!mppProjectId) {
+      toast.error('Projeto MPP não vinculado para sincronização')
+      return
+    }
+
+    try {
+      setSyncing(true)
+      const response = await fetch('/api/mpp/sync-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mppProjectId,
+          localProjectId: projectId,
+        }),
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Falha ao sincronizar projeto')
+      }
+
+      toast.success(`Sincronização concluída (${result.importedTasks || 0} tarefas atualizadas)`)
+      await loadTasks()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao sincronizar projeto')
+    } finally {
+      setSyncing(false)
     }
   }
 
