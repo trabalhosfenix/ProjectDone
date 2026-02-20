@@ -4,27 +4,19 @@ import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-m
 import { ProjectTable } from '@/components/project/project-table'
 import { ResourceAllocationTable } from '@/components/project/resource-allocation-table'
 import { prisma } from '@/lib/prisma'
+import { getMppTasks } from '@/lib/mpp-api'
 import { notFound } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import { FileSpreadsheet, Users, ArrowLeft } from 'lucide-react'
+import { FileSpreadsheet, Users } from 'lucide-react'
 import { ProjectPageHeader } from '@/components/project/project-page-header'
 
 export default async function CronogramaPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   
-  // Buscar itens ordenados por criação (assumindo que foram criados na ordem do Excel)
-  const items = await prisma.projectItem.findMany({
-    where: { 
-      projectId: id
-    },
-    orderBy: [
-      { wbs: 'asc' },
-      { createdAt: 'asc' }
-    ] 
-  })
+  const items = await getMppTasks(id)
 
   // Buscar membros para cruzar informações de cargo/função
   const members = await prisma.projectMember.findMany({

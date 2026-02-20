@@ -44,6 +44,8 @@ model User {
   issueMembers        IssueMember[]
   issueComments       IssueComment[]
   projectMembers      ProjectMember[]  // Projetos em que participa
+  importJobs          ImportJob[]      @relation("ImportJobRequester")
+  importedProjects    ImportedProject[] @relation("ImportedProjectOwner")
 }
 
 model Role {
@@ -158,6 +160,7 @@ model Project {
   testScenarios   TestScenario[]       // Cenários de Teste Integrado
   documents       ProjectDocument[]    // Documentos do projeto
   cutoverTasks    CutoverTask[]        // Tarefas do Plano de Cutover
+  importedProject ImportedProject?
 }
 
 // Riscos do Projeto
@@ -666,4 +669,148 @@ model CutoverTask {
   @@index([projectId])
   @@index([status])
   @@index([responsible])
+}
+
+// Entidades auxiliares para importação de cronogramas externos
+model ImportedProject {
+  id            String   @id @default(uuid())
+  externalUid   String?  @unique
+  name          String?
+  source        String?  // Ex: MPP, XML
+
+  projectId     String?  @unique
+  project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  importedById  String?
+  importedBy    User?    @relation("ImportedProjectOwner", fields: [importedById], references: [id])
+
+  tasks         ImportedTask[]
+  resources     ImportedResource[]
+  links         ImportedTaskLink[]
+  assignments   ImportedAssignment[]
+  importJobs    ImportJob[]
+  syncLogs      ImportSyncLog[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ImportJob {
+  id                String          @id @default(uuid())
+  importedProjectId String
+  importedProject   ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  requestedById     String?
+  requestedBy       User?           @relation("ImportJobRequester", fields: [requestedById], references: [id])
+
+  status            String          @default("pending")
+  message           String?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  syncLogs          ImportSyncLog[]
+
+  @@index([importedProjectId])
+  @@index([requestedById])
+  @@index([status])
+}
+
+model ImportedTask {
+  id                String          @id @default(uuid())
+  importedProjectId String
+  importedProject   ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  uid               String          @unique
+  name              String
+  startDate         DateTime?
+  endDate           DateTime?
+  duration          Float?
+
+  predecessorLinks  ImportedTaskLink[] @relation("TaskLinkSuccessor")
+  successorLinks    ImportedTaskLink[] @relation("TaskLinkPredecessor")
+  assignments       ImportedAssignment[]
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([importedProjectId])
+}
+
+model ImportedResource {
+  id                String          @id @default(uuid())
+  importedProjectId String
+  importedProject   ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  uid               String          @unique
+  name              String
+  type              String?
+
+  assignments       ImportedAssignment[]
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([importedProjectId])
+}
+
+model ImportedTaskLink {
+  id                String          @id @default(uuid())
+  importedProjectId String
+  importedProject   ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  predecessorTaskId String
+  predecessorTask   ImportedTask    @relation("TaskLinkPredecessor", fields: [predecessorTaskId], references: [id], onDelete: Cascade)
+
+  successorTaskId   String
+  successorTask     ImportedTask    @relation("TaskLinkSuccessor", fields: [successorTaskId], references: [id], onDelete: Cascade)
+
+  type              String? // FS, SS, FF, SF
+  lag               Float?
+
+  createdAt         DateTime        @default(now())
+
+  @@index([importedProjectId])
+  @@index([predecessorTaskId])
+  @@index([successorTaskId])
+}
+
+model ImportedAssignment {
+  id                String            @id @default(uuid())
+  importedProjectId String
+  importedProject   ImportedProject   @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  taskId            String
+  task              ImportedTask      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  resourceId        String?
+  resource          ImportedResource? @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+
+  units             Float?
+  work              Float?
+
+  createdAt         DateTime          @default(now())
+
+  @@index([importedProjectId])
+  @@index([taskId])
+  @@index([resourceId])
+}
+
+model ImportSyncLog {
+  id                String          @id @default(uuid())
+  importedProjectId String
+  importedProject   ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  jobId             String?
+  job               ImportJob?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  level             String          @default("info")
+  message           String
+  payload           Json?
+
+  createdAt         DateTime        @default(now())
+
+  @@index([importedProjectId])
+  @@index([jobId])
+  @@index([createdAt])
 }
