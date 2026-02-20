@@ -43,6 +43,14 @@ export async function POST(request: Request) {
       {
         success: response.ok,
         ...(data && typeof data === 'object' ? data : {}),
+        job_id:
+          data && typeof data === 'object'
+            ? String((data as Record<string, unknown>).job_id || (data as Record<string, unknown>).jobId || '') || undefined
+            : undefined,
+        project_id:
+          data && typeof data === 'object'
+            ? String((data as Record<string, unknown>).project_id || (data as Record<string, unknown>).projectId || '') || undefined
+            : undefined,
       },
       { status: response.status }
     )
