@@ -11,6 +11,55 @@ import { Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProjectPageHeader } from "@/components/project/project-page-header"
 
+interface RawGanttTask {
+  id?: string
+  uid?: string | number
+  task?: string
+  name?: string
+  wbs?: string
+  start?: string | null
+  finish?: string | null
+  end?: string | null
+  datePlanned?: string | null
+  datePlannedEnd?: string | null
+  percent_complete?: number
+  metadata?: { progress?: number }
+  dependencies?: unknown
+  responsible?: string
+  status?: string
+  outline_level?: number
+  is_summary?: boolean
+}
+
+const toIsoDate = (value?: string | null) => {
+  if (!value) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString().slice(0, 10)
+}
+
+const normalizeDependencies = (value: unknown) => {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+
+  if (Array.isArray(value)) {
+    const depIds = value
+      .map((dep) => {
+        if (typeof dep === 'string' || typeof dep === 'number') return String(dep)
+        if (dep && typeof dep === 'object') {
+          const maybe = dep as Record<string, unknown>
+          return String(maybe.id || maybe.predecessor_id || maybe.predecessorId || '').trim()
+        }
+        return ''
+      })
+      .filter(Boolean)
+
+    return depIds.join(',')
+  }
+
+  return ''
+}
+
 export default function GanttPage() {
   const params = useParams()
   const projectId = params.id as string
@@ -29,20 +78,54 @@ export default function GanttPage() {
       const res = await fetch(`/api/mpp/projects/${projectId}/gantt`)
       const data = await res.json()
 
-      const sourceTasks = data?.data || data?.items || data?.tasks || []
-      const ganttTasks = sourceTasks
-        .filter((item: any) => (item.datePlanned || item.start) && (item.datePlannedEnd || item.finish || item.end))
-        .map((item: any) => ({
-          id: String(item.id || item.uid),
+      const sourceTasks: RawGanttTask[] = data?.data || data?.items || data?.tasks || []
+
+      const normalized = sourceTasks.map((item, index) => {
+        const start = toIsoDate(item.datePlanned || item.start)
+        const end = toIsoDate(item.datePlannedEnd || item.finish || item.end)
+        const progress = item.metadata?.progress ?? item.percent_complete ?? 0
+
+        return {
+          id: String(item.id || item.uid || `task-${index}`),
           name: item.task || item.name || 'Sem nome',
-          start: new Date(item.datePlanned || item.start).toISOString().split('T')[0],
-          end: new Date(item.datePlannedEnd || item.finish || item.end).toISOString().split('T')[0],
-          progress: item.metadata?.progress ?? item.percent_complete ?? 0,
-          dependencies: item.dependencies || '',
           wbs: item.wbs,
+          start,
+          end,
+          progress: typeof progress === 'number' ? (progress > 1 ? progress : progress * 100) : 0,
+          dependencies: normalizeDependencies(item.dependencies),
           responsible: item.responsible,
-          statusLabel: item.status
-        }))
+          statusLabel: item.status,
+          outline_level: item.outline_level,
+          is_summary: item.is_summary,
+        }
+      })
+
+      const datedTasks = normalized.filter((item) => item.start && item.end)
+      const fallbackStart = datedTasks.length > 0 ? datedTasks[0].start : null
+      const fallbackEnd = datedTasks.length > 0 ? datedTasks[datedTasks.length - 1].end : null
+
+      const ganttTasks = normalized
+        .map((item) => {
+          const start = item.start || item.end || fallbackStart
+          const end = item.end || item.start || fallbackEnd
+
+          if (!start || !end) {
+            return null
+          }
+
+          return {
+            id: item.id,
+            name: item.name,
+            start,
+            end,
+            progress: Math.max(0, Math.min(100, item.progress)),
+            dependencies: item.dependencies,
+            wbs: item.wbs,
+            responsible: item.responsible,
+            statusLabel: item.statusLabel,
+          }
+        })
+        .filter((item): item is GanttSplitTask => Boolean(item))
 
       setTasks(ganttTasks)
     } catch (e) {
