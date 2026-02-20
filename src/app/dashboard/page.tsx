@@ -25,10 +25,10 @@ export default async function DashboardPage() {
   return (
     <div className="h-screen">
       <AdminPanel 
-        initialItems={items} 
-        stats={stats} 
-        curvaSData={curvaSData} 
-        recentActivities={recentActivities} 
+        initialItems={localItems}
+        stats={combinedStats}
+        curvaSData={curvaSData}
+        recentActivities={recentActivities}
         statusOptions={statusOptions.length > 0 ? statusOptions : [
           "Keyuser - Pendente",
           "Keyuser - Concluído",

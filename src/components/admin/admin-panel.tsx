@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
-
+// src/components/admin/admin-panel.tsx
 import { useState } from "react";
 import { Users, LayoutDashboard, Database, Settings, LogOut, Trello, Activity, Layout, FolderOpen, LayoutGrid, ZoomIn, ZoomOut, Type, Shield, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";

@@ -51,7 +51,7 @@ export function calculateDashboardStats(items: any[]) {
     };
 }
 
-export function calculateCurvaS(items: any[]) {
+export function calculateCurvaS(items: any[], _importedTimeline?: any[]) {
     const validItems = items.filter(i => i.datePlanned || i.dateActual);
     if (validItems.length === 0) return [];
 
@@ -101,4 +101,28 @@ export function calculateCurvaS(items: any[]) {
     }
 
     return result;
+}
+
+export function calculateMultiProjectMetrics(projects: any[]) {
+    const total = Array.isArray(projects) ? projects.length : 0
+
+    // Tentativa de mapear alguns campos comuns se existirem
+    const byStatus: Record<string, number> = {}
+    const byType: Record<string, number> = {}
+
+    if (Array.isArray(projects)) {
+        for (const p of projects) {
+            const status = (p?.status || "Desconhecido") as string
+            byStatus[status] = (byStatus[status] || 0) + 1
+
+            const type = (p?.type || "Geral") as string
+            byType[type] = (byType[type] || 0) + 1
+        }
+    }
+
+    return {
+        totalProjects: total,
+        byStatus,
+        byType,
+    }
 }
