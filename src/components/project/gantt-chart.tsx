@@ -80,6 +80,7 @@ export function GanttChart({
         view_mode: viewMode,
         date_format: 'YYYY-MM-DD',
         language: 'pt-br',
+        infinite_padding: false,
         on_click: (task: any) => {
           if (onTaskClick) {
             onTaskClick(task)
@@ -151,24 +152,26 @@ export function GanttChart({
   }
 
   return (
-    <div className="gantt-container overflow-x-auto bg-white rounded-lg border">
+    <div className="gantt-container overflow-x-auto bg-white rounded-lg border border-slate-200">
       <div ref={containerRef} className="min-h-[400px]" />
       <style jsx global>{`
         .gantt .bar-wrapper {
           cursor: pointer;
         }
         .gantt .bar {
-          fill: #3b82f6;
+          fill: #2563eb;
+          filter: drop-shadow(0 1px 1px rgba(37,99,235,.25));
         }
         .gantt .bar-progress {
-          fill: #1d4ed8;
+          fill: #1e40af;
         }
         .gantt .bar-label {
           fill: #fff;
-          font-weight: 500;
+          font-weight: 600;
+          font-size: 12px;
         }
         .gantt .grid-header {
-          fill: #f9fafb;
+          fill: #f8fafc;
         }
         .gantt .grid-row {
           fill: #fff;
@@ -177,13 +180,14 @@ export function GanttChart({
           fill: #f9fafb;
         }
         .gantt .tick {
-          stroke: #e5e7eb;
+          stroke: #e2e8f0;
         }
         .gantt .today-highlight {
-          fill: #fef3c7;
+          fill: #fef9c3;
         }
         .gantt-popup {
-          min-width: 200px;
+          min-width: 220px;
+          border-radius: 12px;
         }
       `}</style>
     </div>

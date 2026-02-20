@@ -66,29 +66,12 @@ export function GanttSplitView({
     return <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-700">Não iniciado</span>;
   };
 
-  // We need to scroll both lists together?
-  // Since we are not doing a complex virtual scroll sync, we can just put them side-by-side in a container
-  // that scrolls the whole page? 
-  // No, if the Gantt is wide, we want horizontal scroll on Gantt ONLY, but Vertical scroll should interact.
-  // The layout requested often has:
-  // [Table (Fixed Width)] [Gantt (Flex, Overflow X)]
-  // And a common Vertical Scrollbar for the list content.
-  // Frappe Gantt renders the whole SVG.
-  // So we can put Table and Gantt in a flex row.
-  // The header of Frappe Gantt might be tricky to align with Table Header vertically if we just dump them in.
-  // BUT Frappe Gantt includes headers.
-  // We should create a custom Table Header that aligns with Frappe Header height.
-  
-  // Wait, `frappe-gantt` header height varies or is fixed.
-  // Default header height is usually around 50-60px depending on view mode (Month view adds lower/upper).
-  // I will check if we can offset the table header to match. 
-  
   return (
-    <div className="flex border rounded-lg bg-white overflow-hidden h-full min-h-[500px]">
+    <div className="flex border rounded-lg bg-white overflow-hidden h-full min-h-[560px]">
       {/* LEFT: Data Table */}
-      <div className="flex-none w-[600px] flex flex-col border-r border-gray-200 bg-white z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+      <div className="flex-none w-[560px] flex flex-col border-r border-gray-200 bg-white z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
         {/* Header - Fixed Height */}
-        <div className="h-[60px] bg-[#f9fafb] border-b border-gray-200 flex items-end">
+        <div className="h-[60px] bg-gradient-to-b from-slate-50 to-white border-b border-gray-200 flex items-end">
              <div className="flex w-full text-xs font-semibold text-gray-500 uppercase tracking-wider">
                 <div className="w-12 p-2 border-r text-center">EAP</div>
                 <div className="flex-1 p-2 border-r">Atividades</div>
@@ -100,10 +83,7 @@ export function GanttSplitView({
              </div>
         </div>
         
-        {/* Rows - Scrollable (hidden scrollbar, synced via main container scroll ideally or just allow page scroll) */}
-        {/* Actually, if we want Frappe Gantt to handle scroll, we usually insert it. */}
-        {/* Let's Try: Flex container of Table and Gantt. */}
-        <div className="flex-1 bg-white">
+        <div className="flex-1 bg-white overflow-y-auto">
             {tasks.map((task, idx) => (
                 <div 
                     key={task.id} 
