@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server'
 import { getMppJob } from '@/lib/mpp-api'
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
   try {
     const { jobId } = await params
-    const job = await getMppJob(jobId)
+    const tenantId = request.headers.get('x-tenant-id') || undefined
+    const job = await getMppJob(jobId, { tenantId })
     return NextResponse.json(job)
   } catch (error) {
     console.error('Erro ao buscar job MPP:', error)
