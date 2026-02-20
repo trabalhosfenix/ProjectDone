@@ -11,7 +11,7 @@ COPY package*.json ./
 COPY prisma ./prisma/
 
 # Instala TODAS as dependências (incluindo devDependencies)
-RUN npm ci
+RUN npm install --no-audit --no-fund
 
 # Gera o cliente Prisma (precisa estar disponível)
 RUN npx prisma generate
