@@ -44,6 +44,8 @@ model User {
   issueMembers        IssueMember[]
   issueComments       IssueComment[]
   projectMembers      ProjectMember[]  // Projetos em que participa
+  importJobs          ImportJob[]      @relation("ImportJobRequester")
+  importedProjects    ImportedProject[] @relation("ImportedProjectOwner")
 }
 
 model Role {
@@ -158,6 +160,7 @@ model Project {
   testScenarios   TestScenario[]       // Cenários de Teste Integrado
   documents       ProjectDocument[]    // Documentos do projeto
   cutoverTasks    CutoverTask[]        // Tarefas do Plano de Cutover
+  importedProject ImportedProject?
 }
 
 // Riscos do Projeto
@@ -668,391 +671,146 @@ model CutoverTask {
   @@index([responsible])
 }
 
-// ============================================
-// MODELOS PARA PROJETOS IMPORTADOS (MPP)
-// ============================================
-
-// Jobs de importação (para acompanhamento)
-model ImportJob {
-  id              String   @id @default(uuid())
-  
-  // Metadados
-  filename        String
-  fileSize        Int?     // Tamanho em bytes
-  sourceFormat    String   // "MPP", "XLSX", "XML"
-  originalFile    String   // URL do arquivo no storage
-  
-  // Status do processamento
-  status          String   @default("PENDING") // PENDING, PROCESSING, PARSING, NORMALIZING, COMPLETED, ERROR
-  progress        Int      @default(0) // 0-100
-  errorMessage    String?  @db.Text
-  errorDetails    Json?    // Detalhes do erro (se houver)
-  
-  // Resultado
-  importedProjectId String? @unique
-  importedProject   ImportedProject? @relation(fields: [importedProjectId], references: [id])
-  
-  // Logs do processo
-  logs            ImportJobLog[]
-  
-  // Controle
-  createdById     String
-  createdBy       User     @relation(fields: [createdById], references: [id])
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  completedAt     DateTime?
-  
-  @@index([status])
-  @@index([createdAt])
-  @@index([createdById])
-}
-
-// Logs detalhados do job
-model ImportJobLog {
-  id              String   @id @default(uuid())
-  jobId           String
-  job             ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  
-  level           String   // "INFO", "WARNING", "ERROR"
-  message         String
-  details         Json?    // Detalhes adicionais (linha do Excel, campo problemático, etc.)
-  
-  createdAt       DateTime @default(now())
-  
-  @@index([jobId])
-  @@index([createdAt])
-}
-
-// ============================================
-// PROJETOS IMPORTADOS (FONTE DA VERDADE)
-// ============================================
-
-// Versão normalizada do projeto importado
+// Entidades auxiliares para importação de cronogramas externos
 model ImportedProject {
-  id              String   @id @default(uuid())
-  
-  // Relação com projeto local (opcional - se sincronizado)
-  localProjectId  String?  @unique
-  localProject    Project? @relation(fields: [localProjectId], references: [id])
-  
-  // Metadados do projeto
-  name            String
-  description     String?  @db.Text
-  code            String?  // Código original do projeto
-  timezone        String   @default("America/Sao_Paulo")
-  
-  // Datas do projeto
-  startDate       DateTime?
-  finishDate      DateTime?
-  statusDate      DateTime? // Data de status (para EVM)
-  
-  // Metadados da importação
-  sourceFile      String   // URL do arquivo original
-  sourceFormat    String   // "MPP", "XLSX", "XML"
-  importedAt      DateTime @default(now())
-  importedById    String
-  importedBy      User     @relation(fields: [importedById], references: [id])
-  
-  // Status do processamento
-  processingStatus String  @default("COMPLETED") // COMPLETED, SYNCED, ERROR
-  
-  // Métricas calculadas
-  progress        Float?   @default(0) // 0-100% (calculado)
-  totalTasks      Int?     @default(0)
-  criticalTasks   Int?     @default(0)
-  delayedTasks    Int?     @default(0)
-  completedTasks  Int?     @default(0)
-  
-  // Metadados flexíveis
-  metadata        Json?    // Informações adicionais do MPP (autor, empresa, etc.)
-  
-  // Relacionamentos
-  calendars       ImportedCalendar[]
-  tasks           ImportedTask[]
-  resources       ImportedResource[]
-  baselines       ImportedBaseline[]
-  assignments     ImportedAssignment[]
-  dependencies    ImportedTaskDependency[]
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  @@index([localProjectId])
-  @@index([importedAt])
-  @@index([processingStatus])
-  @@index([name])
+  id            String   @id @default(uuid())
+  externalUid   String?  @unique
+  name          String?
+  source        String?  // Ex: MPP, XML
+
+  projectId     String?  @unique
+  project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  importedById  String?
+  importedBy    User?    @relation("ImportedProjectOwner", fields: [importedById], references: [id])
+
+  tasks         ImportedTask[]
+  resources     ImportedResource[]
+  links         ImportedTaskLink[]
+  assignments   ImportedAssignment[]
+  importJobs    ImportJob[]
+  syncLogs      ImportSyncLog[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
-// ============================================
-// CALENDÁRIOS
-// ============================================
-
-model ImportedCalendar {
-  id              String   @id @default(uuid())
+model ImportJob {
+  id                String          @id @default(uuid())
   importedProjectId String
-  importedProject ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
-  
-  uid             Int      // ID original do MPP
-  name            String
-  isBase          Boolean  @default(false) // Calendário base
-  isDefault       Boolean  @default(false) // Calendário padrão do projeto
-  
-  // Dias de trabalho (estrutura complexa)
-  workingDays     Json     // { "monday": [{"from": "08:00", "to": "12:00"}], ... }
-  exceptions      Json?    // Feriados e exceções [{date: "2025-12-25", name: "Natal", working: false}]
-  
-  // Relacionamentos
-  resources       ImportedResource[]
-  
-  @@unique([importedProjectId, uid])
+  importedProject   ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  requestedById     String?
+  requestedBy       User?           @relation("ImportJobRequester", fields: [requestedById], references: [id])
+
+  status            String          @default("pending")
+  message           String?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  syncLogs          ImportSyncLog[]
+
   @@index([importedProjectId])
+  @@index([requestedById])
+  @@index([status])
 }
-
-// ============================================
-// RECURSOS
-// ============================================
-
-model ImportedResource {
-  id              String   @id @default(uuid())
-  importedProjectId String
-  importedProject ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
-  
-  uid             Int      // ID único no MPP
-  name            String
-  type            String   @default("WORK") // WORK, MATERIAL, COST
-  
-  // Disponibilidade
-  maxUnits        Float?   @default(100) // Percentual
-  standardRate    Float?   // Custo padrão por hora
-  overtimeRate    Float?   // Custo hora extra
-  
-  // Calendário próprio
-  calendarId      String?
-  calendar        ImportedCalendar? @relation(fields: [calendarId], references: [id])
-  
-  // Metadados
-  email           String?
-  group           String?  // Grupo/departamento
-  code            String?  // Código do recurso
-  
-  // Relacionamentos
-  assignments     ImportedAssignment[]
-  
-  @@unique([importedProjectId, uid])
-  @@index([importedProjectId])
-  @@index([group])
-}
-
-// ============================================
-// TAREFAS (EAP COMPLETA)
-// ============================================
 
 model ImportedTask {
-  id              String   @id @default(uuid())
+  id                String          @id @default(uuid())
   importedProjectId String
-  importedProject ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
-  
-  // IDs originais
-  uid             Int      // ID único do MPP
-  taskId          Int?     // ID da tarefa (visível no MPP)
-  
-  // Hierarquia
-  wbs             String   // "1.1.1"
-  outlineLevel    Int      // Nível na EAP
-  parentTaskUid   Int?     // UID da tarefa pai
-  isSummary       Boolean  @default(false) // Tarefa sumário (tem filhos)
-  isMilestone     Boolean  @default(false) // Marco (duração zero)
-  
-  // Dados básicos
-  name            String
-  status          String?  // Mapeado do MPP
-  
-  // Datas (calculadas pelo MPP)
-  start           DateTime
-  finish          DateTime
-  duration        Float    // Duração em horas
-  durationUnit    String   @default("h") // h, d, w, m
-  
-  // Percentuais
-  percentComplete Float    @default(0)
-  physicalPercentComplete Float? // % física (se diferente)
-  
-  // Restrições
-  constraintType  String?  // "ASAP", "ALAP", "MUST_START_ON", etc
-  constraintDate  DateTime?
-  
-  // Flags
-  isCritical      Boolean  @default(false)
-  isActive        Boolean  @default(true)
-  
-  // Estimativas
-  work            Float?   // Trabalho estimado (horas)
-  actualWork      Float?   // Trabalho realizado
-  remainingWork   Float?   // Trabalho restante
-  
-  // Custo
-  cost            Float?   @default(0)
-  actualCost      Float?   @default(0)
-  
-  // Campos de caminho crítico (calculados)
-  earlyStart      DateTime?
-  earlyFinish     DateTime?
-  lateStart       DateTime?
-  lateFinish      DateTime?
-  freeFloat       Float?   // Folga livre (horas)
-  totalFloat      Float?   // Folga total (horas)
-  
-  // Notas e links
-  notes           String?  @db.Text
-  hyperlinks      Json?    // Links externos
-  
-  // Metadados
-  metadata        Json?    // Campos extras do MPP
-  
-  // Relacionamentos
-  dependencies    ImportedTaskDependency[] @relation("Predecessor")
-  dependents      ImportedTaskDependency[] @relation("Successor")
-  assignments     ImportedAssignment[]
-  baselineTasks   ImportedBaselineTask[]
-  
-  @@unique([importedProjectId, uid])
+  importedProject   ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  uid               String          @unique
+  name              String
+  startDate         DateTime?
+  endDate           DateTime?
+  duration          Float?
+
+  predecessorLinks  ImportedTaskLink[] @relation("TaskLinkSuccessor")
+  successorLinks    ImportedTaskLink[] @relation("TaskLinkPredecessor")
+  assignments       ImportedAssignment[]
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
   @@index([importedProjectId])
-  @@index([wbs])
-  @@index([start, finish])
-  @@index([isCritical])
-  @@index([parentTaskUid])
-  @@index([status])
 }
 
-// ============================================
-// DEPENDÊNCIAS ENTRE TAREFAS
-// ============================================
-
-model ImportedTaskDependency {
-  id              String   @id @default(uuid())
+model ImportedResource {
+  id                String          @id @default(uuid())
   importedProjectId String
-  importedProject ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
-  
-  predecessorUid  Int      // UID da tarefa predecessora
-  successorUid    Int      // UID da tarefa sucessora
-  
-  // Tipo de dependência
-  type            String   @default("FS") // FS, SS, FF, SF
-  
-  // Lag/Lead
-  lag             Float?   @default(0) // Em horas
-  lagUnit         String?  @default("h") // h, d, w, m
-  
-  // Relacionamentos
-  predecessor     ImportedTask @relation("Predecessor", fields: [predecessorUid], references: [uid])
-  successor       ImportedTask @relation("Successor", fields: [successorUid], references: [uid])
-  
-  @@unique([importedProjectId, predecessorUid, successorUid])
+  importedProject   ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  uid               String          @unique
+  name              String
+  type              String?
+
+  assignments       ImportedAssignment[]
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
   @@index([importedProjectId])
-  @@index([predecessorUid])
-  @@index([successorUid])
 }
 
-// ============================================
-// ALOCAÇÕES (ASSIGNMENTS)
-// ============================================
+model ImportedTaskLink {
+  id                String          @id @default(uuid())
+  importedProjectId String
+  importedProject   ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  predecessorTaskId String
+  predecessorTask   ImportedTask    @relation("TaskLinkPredecessor", fields: [predecessorTaskId], references: [id], onDelete: Cascade)
+
+  successorTaskId   String
+  successorTask     ImportedTask    @relation("TaskLinkSuccessor", fields: [successorTaskId], references: [id], onDelete: Cascade)
+
+  type              String? // FS, SS, FF, SF
+  lag               Float?
+
+  createdAt         DateTime        @default(now())
+
+  @@index([importedProjectId])
+  @@index([predecessorTaskId])
+  @@index([successorTaskId])
+}
 
 model ImportedAssignment {
-  id              String   @id @default(uuid())
+  id                String            @id @default(uuid())
   importedProjectId String
-  importedProject ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
-  
-  taskUid         Int      // UID da tarefa
-  resourceUid     Int      // UID do recurso
-  
-  // Alocação
-  units           Float?   @default(100) // Percentual de alocação
-  work            Float?   // Trabalho total (horas)
-  actualWork      Float?   // Trabalho realizado
-  remainingWork   Float?   // Trabalho restante
-  
-  // Datas
-  start           DateTime?
-  finish          DateTime?
-  
-  // Custo
-  cost            Float?   @default(0)
-  actualCost      Float?   @default(0)
-  
-  // Relacionamentos
-  task            ImportedTask @relation(fields: [taskUid], references: [uid])
-  resource        ImportedResource @relation(fields: [resourceUid], references: [uid])
-  
-  @@unique([importedProjectId, taskUid, resourceUid])
+  importedProject   ImportedProject   @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  taskId            String
+  task              ImportedTask      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  resourceId        String?
+  resource          ImportedResource? @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+
+  units             Float?
+  work              Float?
+
+  createdAt         DateTime          @default(now())
+
   @@index([importedProjectId])
-  @@index([taskUid])
-  @@index([resourceUid])
+  @@index([taskId])
+  @@index([resourceId])
 }
 
-// ============================================
-// BASELINES (LINHAS DE BASE)
-// ============================================
-
-model ImportedBaseline {
-  id              String   @id @default(uuid())
-  importedProjectId String
-  importedProject ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
-  
-  number          Int      // Número da baseline (0, 1, 2...)
-  name            String?  // Nome opcional
-  capturedAt      DateTime // Quando foi capturada
-  capturedBy      String?  // Quem capturou (email ou ID)
-  
-  // Relacionamentos
-  baselineTasks   ImportedBaselineTask[]
-  
-  @@unique([importedProjectId, number])
-  @@index([importedProjectId])
-}
-
-model ImportedBaselineTask {
-  id              String   @id @default(uuid())
-  baselineId      String
-  baseline        ImportedBaseline @relation(fields: [baselineId], references: [id], onDelete: Cascade)
-  
-  taskUid         Int
-  task            ImportedTask @relation(fields: [taskUid], references: [uid])
-  
-  // Dados da baseline
-  start           DateTime
-  finish          DateTime
-  duration        Float
-  work            Float?
-  cost            Float?
-  
-  @@unique([baselineId, taskUid])
-  @@index([baselineId])
-  @@index([taskUid])
-}
-
-// ============================================
-// SINCronização com modelo local
-// ============================================
-
-// Tabela de mapeamento para sincronização
 model ImportSyncLog {
-  id              String   @id @default(uuid())
+  id                String          @id @default(uuid())
   importedProjectId String
-  importedProject ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
-  
-  // Data da sincronização
-  syncedAt        DateTime @default(now())
-  syncedBy        String   // ID do usuário que sincronizou
-  
-  // Resultados
-  issuesCreated   Int      @default(0)
-  risksCreated    Int      @default(0)
-  tasksUpdated    Int      @default(0)
-  
-  // Status
-  status          String   @default("SUCCESS") // SUCCESS, PARTIAL, ERROR
-  errorMessage    String?  @db.Text
-  
+  importedProject   ImportedProject @relation(fields: [importedProjectId], references: [id], onDelete: Cascade)
+
+  jobId             String?
+  job               ImportJob?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  level             String          @default("info")
+  message           String
+  payload           Json?
+
+  createdAt         DateTime        @default(now())
+
   @@index([importedProjectId])
-  @@index([syncedAt])
+  @@index([jobId])
+  @@index([createdAt])
 }

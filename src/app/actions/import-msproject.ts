@@ -111,28 +111,3 @@ export async function importMSProject(formData: FormData) {
     }
   }
 }
-
-/**
- * Cancelar um job de importação
- */
-export async function cancelImport(jobId: string) {
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    
-    const response = await fetch(`${baseUrl}/api/projects/import/status/${jobId}/cancel`, {
-      method: 'POST'
-    })
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Erro ao cancelar')
-    }
-
-    return { success: true }
-
-  } catch (error: any) {
-    console.error('Erro ao cancelar:', error)
-    return { success: false, error: error.message }
-  }
-}
