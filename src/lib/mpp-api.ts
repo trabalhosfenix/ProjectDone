@@ -1,4 +1,5 @@
 export const MPP_API_BASE_URL = process.env.MPP_API_BASE_URL || 'http://localhost:8000'
+export const MPP_TENANT_ID = process.env.MPP_TENANT_ID || 'default'
 
 const DEFAULT_MPP_API_BASE_URLS = [
   'http://mpp-api:8000',
@@ -31,6 +32,20 @@ function withTimeoutSignal(timeoutMs: number) {
   return { signal: controller.signal, clear: () => clearTimeout(timeout) }
 }
 
+function withMppHeaders(headersInit?: HeadersInit) {
+  const headers = new Headers(headersInit)
+
+  if (!headers.has('Accept')) {
+    headers.set('Accept', 'application/json')
+  }
+
+  if (!headers.has('x-tenant-id')) {
+    headers.set('x-tenant-id', MPP_TENANT_ID)
+  }
+
+  return headers
+}
+
 export async function mppFetchRaw(
   path: string,
   init?: RequestInit,
@@ -47,6 +62,7 @@ export async function mppFetchRaw(
     try {
       const response = await fetch(url, {
         ...init,
+        headers: withMppHeaders(init?.headers),
         signal,
         cache: 'no-store',
       })
@@ -63,13 +79,7 @@ export async function mppFetchRaw(
 }
 
 async function mppFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await mppFetchRaw(path, {
-    ...init,
-    headers: {
-      Accept: 'application/json',
-      ...(init?.headers || {}),
-    },
-  })
+  const response = await mppFetchRaw(path, init)
 
   if (!response.ok) {
     const text = await response.text()

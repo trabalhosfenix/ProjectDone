@@ -14,6 +14,7 @@ services:
       - NEXTAUTH_SECRET=ponto_de_criacao_secret_2025
       - NEXTAUTH_URL=https://projectdone.com.br
       - MPP_API_BASE_URL=${MPP_API_BASE_URL:-http://mpp-api:8000}
+      - MPP_TENANT_ID=${MPP_TENANT_ID:-default}
     depends_on:
       db:
         condition: service_healthy

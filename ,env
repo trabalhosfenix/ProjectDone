@@ -11,3 +11,4 @@ NEXTAUTH_URL=https://projectdone.com.br
 MPP_API_BASE_URL=http://mpp-api:8000
 # Opcional: múltiplos alvos separados por vírgula
 # MPP_API_BASE_URLS=http://mpp-api:8000,http://host.docker.internal:8000,http://localhost:8000
+MPP_TENANT_ID=default
