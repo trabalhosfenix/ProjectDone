@@ -35,6 +35,13 @@ export function GanttChart({
   const ganttRef = useRef<any>(null)
   const [isClient, setIsClient] = useState(false)
 
+  const normalizeDependencies = (value: GanttTask['dependencies']) => {
+    if (!value) return ''
+    return typeof value === 'string' ? value : ''
+  }
+
+  const isValidDate = (value: string) => !Number.isNaN(new Date(value).getTime())
+
   useEffect(() => {
     setIsClient(true)
   }, [])
@@ -51,14 +58,20 @@ export function GanttChart({
     containerRef.current.appendChild(svg)
 
     // Formatar tarefas para o Frappe Gantt
-    const formattedTasks = tasks.map(task => ({
-      id: task.id,
-      name: task.name,
-      start: task.start,
-      end: task.end,
-      progress: task.progress || 0,
-      dependencies: task.dependencies || ''
-    }))
+    const formattedTasks = tasks
+      .filter((task) => isValidDate(task.start) && isValidDate(task.end))
+      .map(task => ({
+        id: task.id,
+        name: task.name,
+        start: task.start,
+        end: task.end,
+        progress: task.progress || 0,
+        dependencies: normalizeDependencies(task.dependencies)
+      }))
+
+    if (formattedTasks.length === 0) {
+      return
+    }
 
     try {
       ganttRef.current = new Gantt('#gantt-chart', formattedTasks, {
@@ -67,6 +80,7 @@ export function GanttChart({
         view_mode: viewMode,
         date_format: 'YYYY-MM-DD',
         language: 'pt-br',
+        infinite_padding: false,
         on_click: (task: any) => {
           if (onTaskClick) {
             onTaskClick(task)
@@ -138,24 +152,26 @@ export function GanttChart({
   }
 
   return (
-    <div className="gantt-container overflow-x-auto bg-white rounded-lg border">
+    <div className="gantt-container overflow-x-auto bg-white rounded-lg border border-slate-200">
       <div ref={containerRef} className="min-h-[400px]" />
       <style jsx global>{`
         .gantt .bar-wrapper {
           cursor: pointer;
         }
         .gantt .bar {
-          fill: #3b82f6;
+          fill: #2563eb;
+          filter: drop-shadow(0 1px 1px rgba(37,99,235,.25));
         }
         .gantt .bar-progress {
-          fill: #1d4ed8;
+          fill: #1e40af;
         }
         .gantt .bar-label {
           fill: #fff;
-          font-weight: 500;
+          font-weight: 600;
+          font-size: 12px;
         }
         .gantt .grid-header {
-          fill: #f9fafb;
+          fill: #f8fafc;
         }
         .gantt .grid-row {
           fill: #fff;
@@ -164,13 +180,14 @@ export function GanttChart({
           fill: #f9fafb;
         }
         .gantt .tick {
-          stroke: #e5e7eb;
+          stroke: #e2e8f0;
         }
         .gantt .today-highlight {
-          fill: #fef3c7;
+          fill: #fef9c3;
         }
         .gantt-popup {
-          min-width: 200px;
+          min-width: 220px;
+          border-radius: 12px;
         }
       `}</style>
     </div>
