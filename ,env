@@ -6,3 +6,8 @@ POSTGRES_DB=projectdone
 # Aplicação
 NEXTAUTH_SECRET=ponto_de_criacao_secret_2025
 NEXTAUTH_URL=https://projectdone.com.br
+
+# Integração MPP Platform API
+MPP_API_BASE_URL=http://mpp-api:8000
+# Opcional: múltiplos alvos separados por vírgula
+# MPP_API_BASE_URLS=http://mpp-api:8000,http://host.docker.internal:8000,http://localhost:8000

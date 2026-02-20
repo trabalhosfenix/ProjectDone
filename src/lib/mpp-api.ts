@@ -1,8 +1,9 @@
 export const MPP_API_BASE_URL = process.env.MPP_API_BASE_URL || 'http://localhost:8000'
 
 const DEFAULT_MPP_API_BASE_URLS = [
-  'http://localhost:8000',
+  'http://mpp-api:8000',
   'http://host.docker.internal:8000',
+  'http://localhost:8000',
 ]
 
 interface MppRawFetchOptions {
@@ -58,9 +59,7 @@ export async function mppFetchRaw(
     }
   }
 
-  throw new Error(
-    `MPP API indisponível. Tentativas: ${errors.join(' | ')}`
-  )
+  throw new Error(`MPP API indisponível. Tentativas: ${errors.join(' | ')}`)
 }
 
 async function mppFetch<T>(path: string, init?: RequestInit): Promise<T> {

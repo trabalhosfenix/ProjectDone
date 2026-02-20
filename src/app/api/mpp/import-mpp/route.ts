@@ -1,5 +1,13 @@
 import { NextResponse } from 'next/server'
-import { getMppApiBaseUrls, mppFetchRaw } from '@/lib/mpp-api'
+import { mppFetchRaw } from '@/lib/mpp-api'
+
+async function safeJson(response: Response) {
+  try {
+    return await response.json()
+  } catch {
+    return null
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -8,7 +16,7 @@ export async function POST(request: Request) {
     const projectId = formData.get('projectId')
 
     if (!file) {
-      return NextResponse.json({ error: 'Arquivo não fornecido' }, { status: 400 })
+      return NextResponse.json({ success: false, error: 'Arquivo não fornecido' }, { status: 400 })
     }
 
     const upstreamFormData = new FormData()
@@ -18,25 +26,33 @@ export async function POST(request: Request) {
       upstreamFormData.append('legacy_project_id', String(projectId))
     }
 
-    const response = await mppFetchRaw('/v1/projects/import/mpp', {
-      method: 'POST',
-      body: upstreamFormData,
-    }, {
-      timeoutMs: 120_000,
-    })
+    const response = await mppFetchRaw(
+      '/v1/projects/import/mpp',
+      {
+        method: 'POST',
+        body: upstreamFormData,
+      },
+      {
+        timeoutMs: 120_000,
+      }
+    )
 
-    const data = await response.json()
-    return NextResponse.json(data, { status: response.status })
-  } catch (error) {
-    console.error('Erro ao importar MPP:', error)
-
-    const message = error instanceof Error ? error.message : 'Falha ao integrar com MPP Platform API'
+    const data = await safeJson(response)
 
     return NextResponse.json(
       {
+        success: response.ok,
+        ...(data && typeof data === 'object' ? data : {}),
+      },
+      { status: response.status }
+    )
+  } catch (error) {
+    console.error('Erro ao importar MPP:', error)
+
+    return NextResponse.json(
+      {
+        success: false,
         error: 'Falha ao integrar com MPP Platform API',
-        details: message,
-        triedBaseUrls: getMppApiBaseUrls(),
       },
       { status: 503 }
     )
