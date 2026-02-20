@@ -13,7 +13,14 @@ export default async function DashboardPage() {
     getRecentActivities(),
     getStatusOptions(),
     prisma.projectRisk.count(),
-    prisma.issue.count({ where: { status: { not: 'Resolvida' } } })
+    prisma.issue.count({
+      where: {
+        OR: [
+          { statusId: null },
+          { status: { is: { label: { not: 'Resolvida' } } } },
+        ],
+      },
+    })
   ]);
 
   // Local sync calculation (Instant)
