@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { startOfDay, isSameDay, addDays, differenceInDays, min, max, format } from "date-fns";
 
 export function calculateDashboardStats(items: any[]) {
@@ -24,6 +25,15 @@ export function calculateDashboardStats(items: any[]) {
     const today = startOfDay(new Date());
     const metaDoDia = items.filter((i: any) => i.datePlanned && isSameDay(new Date(i.datePlanned), today)).length;
 
+    const realCompleted = items.filter((i: any) => i.dateActual).length
+    const realPercentage = total > 0 ? Math.round((realCompleted / total) * 100) : 0
+
+    const datedItems = items.filter((i: any) => i.datePlanned || i.dateActual)
+    const allDates = datedItems.flatMap((i: any) => [i.datePlanned, i.dateActual]).filter(Boolean).map((d: any) => new Date(d))
+    const totalDurationDays = allDates.length > 0 ? differenceInDays(max(allDates), min(allDates)) + 1 : 0
+
+    const allocatedResources = new Set(items.map((i: any) => i.responsible).filter(Boolean)).size
+
     return {
       total,
       completed,
@@ -32,7 +42,12 @@ export function calculateDashboardStats(items: any[]) {
       metaDoDia,
       progressPercentage: total > 0 ? Math.round((completed / total) * 100) : 0,
       spi: Number(spi.toFixed(2)),
-      cpi: Number(cpi.toFixed(2))
+      cpi: Number(cpi.toFixed(2)),
+      realPercentage,
+      totalDurationDays,
+      allocatedResources,
+      totalRisks: 0,
+      openIssues: 0
     };
 }
 

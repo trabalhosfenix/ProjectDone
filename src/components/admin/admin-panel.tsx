@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 // src/components/admin/admin-panel.tsx
 import { useState } from "react";
-import { Users, LayoutDashboard, Database, Settings, LogOut, Trello, Activity, Layout, FolderOpen, LayoutGrid, ZoomIn, ZoomOut, Type, Shield } from "lucide-react";
+import { Users, LayoutDashboard, Database, Settings, LogOut, Trello, Activity, Layout, FolderOpen, LayoutGrid, ZoomIn, ZoomOut, Type, Shield, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import UserManagement from "@/components/admin/user-management";
 import { ExcelUpload } from "@/components/excel-upload";
@@ -36,46 +37,52 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
   const [activeTab, setActiveTab] = useState<"dashboard" | "kanban" | "users" | "data" | "settings" | "canvas" | "resources" | "library" | "portfolio" | "perfis" | "projetos">("projetos");
   const [selectedProject, setSelectedProject] = useState("Geral");
   const [fontScale, setFontScale] = useState(1);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false
+    return localStorage.getItem("sidebar-collapsed") === "true"
+  });
 
   const projectNames = Array.from(new Set(initialItems.map(i => i.originSheet))).filter(Boolean);
 
-  // src/components/admin/admin-panel.tsx (TRECHO ATUALIZADO)
+  const toggleSidebar = () => {
+    const next = !isSidebarCollapsed
+    setIsSidebarCollapsed(next)
+    localStorage.setItem("sidebar-collapsed", String(next))
+  }
 
-// No array menuItems, adicionar:
-const menuItems = [
-  { id: "projetos", label: "Projetos Locais", icon: FolderOpen },
-  { id: "importados", label: "Projetos Importados", icon: Database }, // NOVO
-  { id: "kanban", label: "Quadro Ágil", icon: Trello },
-  { id: "canvas", label: "PM Canvas", icon: Layout },
-  { id: "resources", label: "Alocação", icon: Users },
-  { id: "perfis", label: "Perfis", icon: Shield },
-  { id: "portfolio", label: "Portfólio", icon: LayoutGrid },
-  { id: "library", label: "Documentos", icon: FolderOpen },
-  { id: "data", label: "Base de Dados", icon: Database },
-  { id: "settings", label: "Configurações", icon: Settings },
-];
-
-// No switch de activeTab, adicionar:
-// {activeTab === "importados" && (
-//   <div className="space-y-8">
-//     <div className="flex justify-between items-center">
-//       <h2 className="text-3xl font-bold text-[#094160]">Projetos Importados</h2>
-//       <Button onClick={() => router.push('/dashboard/import')}>
-//         <Plus className="w-4 h-4 mr-2" />
-//         Importar Novo
-//       </Button>
-//     </div>
-//     <ProjectList type="imported" showAll={true} />
-//   </div>
-// )}
+  const menuItems = [
+    { id: "projetos", label: "Projetos", icon: FolderOpen },
+    { id: "kanban", label: "Quadro Ágil", icon: Trello },
+    { id: "canvas", label: "PM Canvas", icon: Layout },
+    { id: "resources", label: "Alocação", icon: Users },
+    { id: "perfis", label: "Perfis", icon: Shield },
+    { id: "portfolio", label: "Portfólio", icon: LayoutGrid },
+    { id: "library", label: "Documentos", icon: FolderOpen },
+    { id: "data", label: "Base de Dados", icon: Database },
+    { id: "settings", label: "Configurações", icon: Settings },
+  ];
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-[#094160] font-montserrat">
       {/* Sidebar */}
-      <aside className="w-72 bg-[#094160] text-white hidden md:flex flex-col">
-        <div className="p-6 border-b border-[#0d5a85]">
-          <h1 className="text-2xl font-bold">ProjectDone</h1>
-          <p className="text-[12px] text-blue-200 tracking-widest uppercase font-semibold">Sistema de Gestão</p>
+      <aside className={cn("bg-[#094160] text-white hidden md:flex flex-col transition-all duration-300 relative", isSidebarCollapsed ? "w-20" : "w-72")}>
+        <button
+          onClick={toggleSidebar}
+          className="absolute -right-3 top-9 bg-white text-[#094160] border border-gray-200 rounded-full p-1 shadow-md hover:bg-gray-100 transition-colors z-50"
+        >
+          {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+        <div className={cn("p-6 border-b border-[#0d5a85] overflow-hidden whitespace-nowrap", isSidebarCollapsed && "px-4")}>
+          {isSidebarCollapsed ? (
+            <div className="flex justify-center">
+              <h1 className="text-xl font-bold">PD</h1>
+            </div>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold">ProjectDone</h1>
+              <p className="text-[12px] text-blue-200 tracking-widest uppercase font-semibold">Sistema de Gestão</p>
+            </>
+          )}
         </div>
         
         <nav className="flex-1 p-5 space-y-3">
@@ -93,10 +100,10 @@ const menuItems = [
                 <Link
                   key={item.id}
                   href={item.href}
-                  className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-sm transition-all text-left hover:bg-[#0d5a85] text-blue-100 hover:scale-[1.02]"
+                  className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-xl text-sm transition-all text-left hover:bg-[#0d5a85] text-blue-100 hover:scale-[1.02]", isSidebarCollapsed && "justify-center px-2")}
                 >
                   <item.icon className="w-5 h-5" />
-                  <span className="font-medium">{item.label}</span>
+                  {!isSidebarCollapsed && <span className="font-medium">{item.label}</span>}
                 </Link>
               );
             }
@@ -108,26 +115,37 @@ const menuItems = [
                 onClick={() => setActiveTab(item.id as any)}
                 className={cn(
                     "w-full flex items-center gap-4 px-5 py-4 rounded-xl text-sm transition-all text-left",
+                    isSidebarCollapsed && "justify-center px-2",
                     activeTab === item.id 
                     ? "bg-white text-[#094160] font-bold shadow-lg scale-[1.02]" 
                     : "hover:bg-[#0d5a85] text-blue-100 hover:scale-[1.02]"
                 )}
                 >
                 <item.icon className="w-5 h-5" />
-                <span className="font-medium">{item.label}</span>
+                {!isSidebarCollapsed && <span className="font-medium">{item.label}</span>}
                 </button>
             );
           })}
         </nav>
 
-        <div className="p-5 border-t border-[#0d5a85]">
-          <button 
-            onClick={() => signOut({ callbackUrl: "/" })}
-            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-sm hover:bg-red-500/20 text-red-200 transition-colors text-left"
-          >
-            <LogOut className="w-5 h-5" />
-            Sair do Sistema
-          </button>
+        <div className="p-5 border-t border-[#0d5a85] overflow-hidden">
+          {isSidebarCollapsed ? (
+            <button
+              onClick={() => signOut({ callbackUrl: "/" })}
+              className="w-full flex items-center justify-center p-3 rounded-xl text-sm hover:bg-red-500/20 text-red-200 transition-colors"
+              title="Sair"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          ) : (
+            <button 
+              onClick={() => signOut({ callbackUrl: "/" })}
+              className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-sm hover:bg-red-500/20 text-red-200 transition-colors text-left"
+            >
+              <LogOut className="w-5 h-5" />
+              Sair do Sistema
+            </button>
+          )}
         </div>
       </aside>
 

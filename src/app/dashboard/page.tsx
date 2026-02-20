@@ -1,47 +1,24 @@
 import AdminPanel from "@/components/admin/admin-panel";
 import { getProjectItems, getStatusOptions } from "@/app/actions/items";
 import { getRecentActivities } from "@/app/actions/dashboard";
-import { getImportedProjects, getImportedTasksSummary } from "@/app/actions/imported-projects";
-import { calculateDashboardStats, calculateCurvaS, calculateMultiProjectMetrics } from "@/lib/dashboard-calculations";
+import { calculateDashboardStats, calculateCurvaS } from "@/lib/dashboard-calculations";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  // Buscar dados locais E importados em paralelo
-  const [
-    localItems, 
-    recentActivities, 
-    statusOptionsData,
-    importedProjectsResult,
-    importedTasksSummary
-  ] = await Promise.all([
-    getProjectItems(),                    // Dados locais
-    getRecentActivities(),                 // Atividades recentes
-    getStatusOptions(),                    // Status options
-    getImportedProjects({ limit: 5 }),     // Últimos projetos importados
-    getImportedTasksSummary()              // Resumo das tarefas importadas
+  // Parallel Fetching: 3 concurrent requests instead of 5 sequential
+  const [items, recentActivities, statusOptionsData, totalRisks, openIssues] = await Promise.all([
+    getProjectItems(),
+    getRecentActivities(),
+    getStatusOptions(),
+    prisma.projectRisk.count(),
+    prisma.issue.count({ where: { status: { not: 'Resolvida' } } })
   ]);
 
-  const importedProjects = (importedProjectsResult as any)?.projects ?? [];
-
-  // Estatísticas combinadas (local + importado)
-  const localStats = calculateDashboardStats(localItems);
-  const combinedStats = {
-    ...localStats,
-    // Adicionar métricas de projetos importados
-    importedProjects: importedProjects.length,
-    importedTasks: importedTasksSummary.totalTasks,
-    criticalTasks: importedTasksSummary.criticalTasks,
-    delayedTasks: importedTasksSummary.delayedTasks,
-    // Métricas consolidadas
-    ...{}
-  };
-
-  // Curva S combinada (se necessário)
-  const curvaSData = calculateCurvaS(localItems, importedTasksSummary.timelineData);
-  
-  // Multi-project metrics
-  const multiProjectMetrics = calculateMultiProjectMetrics(importedProjects);
+  // Local sync calculation (Instant)
+  const stats = { ...calculateDashboardStats(items), totalRisks, openIssues };
+  const curvaSData = calculateCurvaS(items);
   
   const statusOptions = statusOptionsData.map(opt => opt.label);
   

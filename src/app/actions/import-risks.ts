@@ -1,8 +1,18 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use server'
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import * as XLSX from 'xlsx'
+
+function classifyRisk(probability: number, impact: number) {
+  const severity = probability * impact
+  if (severity >= 15) return { severity, level: 'Crítico', priority: 'P1' }
+  if (severity >= 10) return { severity, level: 'Alto', priority: 'P2' }
+  if (severity >= 5) return { severity, level: 'Médio', priority: 'P3' }
+  return { severity, level: 'Baixo', priority: 'P4' }
+}
+
 
 export async function importRisksExcel(formData: FormData) {
   const file = formData.get('file') as File
@@ -44,7 +54,7 @@ export async function importRisksExcel(formData: FormData) {
         const category = row['Categoria'] || row['Category'] || 'Gerencial'
         const probability = parseInt(row['Probabilidade'] || row['Probability'] || '3') || 3
         const impact = parseInt(row['Impacto'] || row['Impact'] || '3') || 3
-        const severity = probability * impact
+        const classified = classifyRisk(probability, impact)
         const responseStrategy = row['Estratégia'] || row['Strategy'] || row['Estrategia'] || 'Mitigar'
         const responsePlan = row['Plano de Ação'] || row['Plano'] || row['Response Plan'] || ''
         const owner = row['Responsável'] || row['Owner'] || row['Dono'] || ''
@@ -61,14 +71,14 @@ export async function importRisksExcel(formData: FormData) {
             category,
             probability,
             impact,
-            severity,
+            severity: classified.severity,
             responseStrategy,
-            responsePlan,
             owner,
             causes,
             consequences,
             contingency,
-            status
+            status,
+            responsePlan: `${responsePlan}\n[Nível: ${classified.level} | Prioridade: ${classified.priority}]`.trim()
           }
         })
 
