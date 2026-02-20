@@ -1,154 +1,300 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
-import { addBusinessDays, isWeekendDay } from '@/lib/date-utils'
 import { revalidatePath } from 'next/cache'
+import { calculateEndDate, isWorkingDay, WorkCalendarConfig } from '@/lib/calendar-engine'
+
+type ItemState = {
+  start: Date
+  end: Date
+  duration: number
+}
+
+type PredecessorRef = {
+  ref: string
+  type: 'FS' | 'SS' | 'FF' | 'SF'
+  lag: number
+}
+
+const DEFAULT_CONFIG: WorkCalendarConfig = {
+  type: 'BUSINESS_DAYS',
+  holidays: [],
+  workHoursPerDay: 8,
+}
+
+function parsePredecessors(raw: unknown): PredecessorRef[] {
+  if (!raw || typeof raw !== 'string') return []
+
+  return raw
+    .split(/[;,]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((token) => {
+      const m = token.match(/^([\w.\-]+)\s*(FS|SS|FF|SF)?\s*([+\-]\d+)?\s*[dD]?$/)
+      if (!m) return { ref: token, type: 'FS' as const, lag: 0 }
+
+      return {
+        ref: m[1],
+        type: (m[2] as 'FS' | 'SS' | 'FF' | 'SF') || 'FS',
+        lag: m[3] ? Number(m[3]) : 0,
+      }
+    })
+}
+
+function addWorkingDays(date: Date, days: number, config: WorkCalendarConfig): Date {
+  const cursor = new Date(date)
+
+  if (days === 0) return cursor
+
+  const step = days > 0 ? 1 : -1
+  let remaining = Math.abs(days)
+
+  while (remaining > 0) {
+    cursor.setDate(cursor.getDate() + step)
+    if (isWorkingDay(cursor, config)) {
+      remaining -= 1
+    }
+  }
+
+  return cursor
+}
+
+function normalizeStart(date: Date, config: WorkCalendarConfig): Date {
+  const cursor = new Date(date)
+  while (!isWorkingDay(cursor, config)) {
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return cursor
+}
+
+type SchedItem = {
+  id: string
+  wbs: string | null
+  status: string | null
+  weight: number | null
+  duration: number | null
+  datePlanned: Date | null
+  datePlannedEnd: Date | null
+  createdAt: Date
+  metadata: unknown
+}
+
+function extractProgress(item: SchedItem): number {
+  const meta = (item.metadata as Record<string, unknown>) || {}
+  const raw = meta.progress
+  const value = typeof raw === 'number' ? raw : Number(raw || 0)
+  if (Number.isNaN(value)) return 0
+  return value > 1 ? value / 100 : value
+}
+
+function consolidateParentProgress(items: SchedItem[]): Map<string, number> {
+  const result = new Map<string, number>()
+
+  for (const parent of items) {
+    if (!parent.wbs) continue
+
+    const children = items.filter((candidate) => {
+      if (!candidate.wbs || candidate.id === parent.id) return false
+      return candidate.wbs.startsWith(`${parent.wbs}.`)
+    })
+
+    if (children.length === 0) continue
+
+    let weightSum = 0
+    let progressSum = 0
+
+    for (const child of children) {
+      const weight = typeof child.weight === 'number' && child.weight > 0 ? child.weight : 1
+      weightSum += weight
+      progressSum += extractProgress(child) * weight
+    }
+
+    if (weightSum > 0) {
+      result.set(parent.id, Number((progressSum / weightSum).toFixed(4)))
+    }
+  }
+
+  return result
+}
+
+type ProjectWithCalendar = {
+  workCalendar: {
+    type: string
+    workHoursPerDay: number
+    holidays: { date: Date; recurring: boolean }[]
+  } | null
+}
+
+function getCalendarConfig(project: ProjectWithCalendar | null): WorkCalendarConfig {
+  const calendar = project.workCalendar
+
+  if (!calendar) return DEFAULT_CONFIG
+
+  return {
+    type: (calendar.type as 'BUSINESS_DAYS' | 'RUNNING_DAYS') || 'BUSINESS_DAYS',
+    holidays: (calendar.holidays || []).map((h) => ({
+      date: h.date,
+      isRecurring: Boolean(h.recurring),
+    })),
+    workHoursPerDay: calendar.workHoursPerDay || 8,
+  }
+}
 
 export async function recalculateProjectSchedule(projectId: string) {
   try {
-    // 1. Fetch all items ordered by WBS (Logical Order)
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        workCalendar: {
+          include: { holidays: true },
+        },
+      },
+    })
+
+    const config = getCalendarConfig(project)
+
     const items = await prisma.projectItem.findMany({
       where: { projectId },
-      orderBy: [
-        { wbs: 'asc' },
-        { createdAt: 'asc' }
-      ]
+      orderBy: [{ wbs: 'asc' }, { createdAt: 'asc' }],
     })
 
-    if (items.length === 0) return { success: true }
+    if (items.length === 0) return { success: true, updates: 0, progressUpdates: 0 }
 
-    // 2. Map items to "Row IDs" (1-based index) for Excel-like referencing
-    // Map ID -> Index
-    // Map Index -> Item
-    const itemMap = new Map<string, any>()
-    const indexMap = new Map<number, any>()
-    
-    items.forEach((item, idx) => {
-        itemMap.set(item.id, item)
-        indexMap.set(idx + 1, item) // 1-based index
-    })
+    const byId = new Map(items.map((item) => [item.id, item]))
+    const byWbs = new Map(items.filter((item) => item.wbs).map((item) => [item.wbs as string, item]))
+    const byIndex = new Map(items.map((item, index) => [String(index + 1), item]))
 
-    // 3. Dependency Graph & Date Calculation
-    // Since we need to propagate dates, we can't just iterate once if dependencies point forward (rare but possible).
-    // However, usually dependencies point backward (Predecessors).
-    // Start with the first task.
-    
-    // We will do a topological sort approach implicitly by iterating?
-    // Or just "Change propagation".
-    // Let's build a graph of successors to propagate changes efficiently?
-    // Or simpler: Iterate multiple times until convergence or max iterations (to avoid cycles).
-    
-    const updates: Map<string, { start: Date, end: Date, duration: number }> = new Map()
-    
-    // Initialize dates from DB
-    const state = new Map<string, { start: Date, end: Date, duration: number }>()
-    items.forEach(item => {
-        state.set(item.id, {
-            start: item.datePlanned || new Date(),
-            end: item.datePlannedEnd || item.datePlanned || new Date(),
-            duration: (item.metadata as any)?.duration ? parseFloat((item.metadata as any).duration) : 1
-        })
-    })
+    const state = new Map<string, ItemState>()
+    for (const item of items) {
+      const rawDuration = Number(item.duration || (item.metadata as Record<string, unknown> | null)?.duration || 1)
+      const duration = Number.isFinite(rawDuration) && rawDuration > 0 ? Math.ceil(rawDuration) : 1
+      const start = normalizeStart(new Date(item.datePlanned || item.createdAt), config)
+      const end = calculateEndDate(start, duration, config)
+      state.set(item.id, { start, end, duration })
+    }
 
     let changed = true
     let iterations = 0
-    const MAX_ITERATIONS = items.length + 5 // Safety break
+    const MAX_ITERATIONS = items.length * 3
 
     while (changed && iterations < MAX_ITERATIONS) {
-        changed = false
-        iterations++
+      changed = false
+      iterations += 1
 
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i]
-            const meta = item.metadata as any || {}
-            const predString = meta.predecessors as string // e.g. "2, 3"
+      for (const item of items) {
+        const current = state.get(item.id)
+        if (!current) continue
 
-            if (!predString) continue
+        const predecessors = parsePredecessors((item.metadata as Record<string, unknown> | null)?.predecessors)
+        if (predecessors.length === 0) continue
 
-            // Parse predecessors
-            const preds = predString.split(/[;,]/).map(s => s.trim()).filter(Boolean)
-            
-            // Calculate Constraint Date (Max(Predecessor.End))
-            // Default start is Project Start (or keep current if no preds)
-            // But if dependencies exist, they drive the start date.
-            
-            let maxPredEnd: Date | null = null
-            
-            for (const p of preds) {
-                // Try to parse number
-                const rowId = parseInt(p)
-                if (!isNaN(rowId)) {
-                    const predItem = indexMap.get(rowId)
-                    if (predItem) {
-                        const predState = state.get(predItem.id)
-                        if (predState) {
-                             if (!maxPredEnd || predState.end > maxPredEnd) {
-                                 maxPredEnd = new Date(predState.end)
-                             }
-                        }
-                    }
-                }
+        let constrainedStart: Date | null = null
+
+        for (const pred of predecessors) {
+          const predecessorItem = byId.get(pred.ref) || byWbs.get(pred.ref) || byIndex.get(pred.ref)
+          if (!predecessorItem) continue
+          const predecessorState = state.get(predecessorItem.id)
+          if (!predecessorState) continue
+
+          let candidateStart: Date
+          switch (pred.type) {
+            case 'SS':
+              candidateStart = addWorkingDays(predecessorState.start, pred.lag, config)
+              break
+            case 'FF': {
+              const finishTarget = addWorkingDays(predecessorState.end, pred.lag, config)
+              candidateStart = addWorkingDays(finishTarget, -(current.duration - 1), config)
+              break
             }
-
-            if (maxPredEnd) {
-                // Determine new Start Date = Next Business Day after MaxPredEnd?
-                // Or same day? 
-                // FS (Finish to Start): Start = Finish + 1 day (roughly).
-                // Or strict time: Finish 5pm -> Start next day 8am.
-                // date-utils `addBusinessDays(maxPredEnd, 1)`?
-                // If maxPredEnd is Friday, Start is Monday.
-                
-                // Let's assume FS with 0 lag means "Start Next Working Day".
-                const newStart = addBusinessDays(maxPredEnd, 1) 
-                
-                // Compare with current state
-                const currentState = state.get(item.id)!
-                if (newStart.getTime() !== currentState.start.getTime()) {
-                    // Update Start
-                    currentState.start = newStart
-                    // Recalculate End based on Duration
-                    // End = Start + Duration
-                    // But `addBusinessDays` logic:
-                    // If Duration = 1 day, Start=Mon, End=Mon?
-                    // Let's assume standard: End = Start + DurationDays - 1 (Inclusive)?
-                    // Or pure add: End = Start + Duration (Exclusive).
-                    // If Duration is stored as "days", usually 1 day = 8h work.
-                    // Let's use `addBusinessDays(start, duration)` which effectively adds days.
-                    // If Start=Mon, Duration=1 -> End=Tue? 
-                    // Let's try to match User Expectation: "Inicio: 29/01, Termino: 10/04".
-                    // Let's use `addBusinessDays(start, duration)`.
-                    
-                    currentState.end = addBusinessDays(newStart, currentState.duration)
-                    
-                    state.set(item.id, currentState)
-                    updates.set(item.id, currentState)
-                    changed = true
-                }
+            case 'SF': {
+              const finishTarget = addWorkingDays(predecessorState.start, pred.lag, config)
+              candidateStart = addWorkingDays(finishTarget, -(current.duration - 1), config)
+              break
             }
+            case 'FS':
+            default:
+              candidateStart = addWorkingDays(predecessorState.end, 1 + pred.lag, config)
+              break
+          }
+
+          candidateStart = normalizeStart(candidateStart, config)
+
+          if (!constrainedStart || candidateStart > constrainedStart) {
+            constrainedStart = candidateStart
+          }
         }
+
+        if (!constrainedStart) continue
+
+        const nextEnd = calculateEndDate(constrainedStart, current.duration, config)
+
+        if (
+          constrainedStart.getTime() !== current.start.getTime() ||
+          nextEnd.getTime() !== current.end.getTime()
+        ) {
+          state.set(item.id, { ...current, start: constrainedStart, end: nextEnd })
+          changed = true
+        }
+      }
     }
 
-    // 4. Batch Update DB
-    if (updates.size > 0) {
-        const promises = Array.from(updates.entries()).map(([id, data]) => {
-            return prisma.projectItem.update({
-                where: { id },
-                data: {
-                    datePlanned: data.start,
-                    datePlannedEnd: data.end,
-                    // Note: We update 'planned' dates. 'Actual' dates are user input for tracking.
-                    // But if this is a Plan, we update Planned.
-                }
-            })
+    const scheduleUpdates = Array.from(state.entries()).filter(([id, next]) => {
+      const item = byId.get(id)
+      if (!item) return false
+      const currentStart = item.datePlanned ? new Date(item.datePlanned).getTime() : null
+      const currentEnd = item.datePlannedEnd ? new Date(item.datePlannedEnd).getTime() : null
+      return currentStart !== next.start.getTime() || currentEnd !== next.end.getTime()
+    })
+
+    if (scheduleUpdates.length > 0) {
+      await Promise.all(
+        scheduleUpdates.map(([id, next]) =>
+          prisma.projectItem.update({
+            where: { id },
+            data: {
+              datePlanned: next.start,
+              datePlannedEnd: next.end,
+              duration: next.duration,
+            },
+          })
+        )
+      )
+    }
+
+    const progressMap = consolidateParentProgress(items)
+    const progressUpdates = Array.from(progressMap.entries())
+
+    if (progressUpdates.length > 0) {
+      await Promise.all(
+        progressUpdates.map(async ([id, progress]) => {
+          const item = byId.get(id)
+          if (!item) return
+          const metadata = ((item.metadata as Record<string, unknown>) || {}) as Record<string, unknown>
+
+          await prisma.projectItem.update({
+            where: { id },
+            data: {
+              status: progress >= 1 ? 'Concluído' : item.status,
+              metadata: {
+                ...metadata,
+                progress,
+              },
+            },
+          })
         })
-        
-        await Promise.all(promises)
-        
-        // Find Project ID to revalidate
-        revalidatePath(`/dashboard/projetos/${projectId}/cronograma`)
+      )
     }
 
-    return { success: true, updates: updates.size }
+    revalidatePath(`/dashboard/projetos/${projectId}/cronograma`)
+    revalidatePath(`/dashboard/projetos/${projectId}/gantt`)
+    revalidatePath(`/dashboard/projetos/${projectId}/kanban`)
+
+    return {
+      success: true,
+      updates: scheduleUpdates.length,
+      progressUpdates: progressUpdates.length,
+      iterations,
+    }
   } catch (error) {
     console.error(error)
     return { success: false, error: 'Erro ao recalcular cronograma' }

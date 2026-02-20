@@ -1,10 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
 import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Trash2, AlertTriangle, ArrowRight, Edit } from 'lucide-react'
+import { Trash2, AlertTriangle, Edit } from 'lucide-react'
 import { deleteProjectRisk } from '@/app/actions/project-risks'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -12,9 +13,14 @@ import Link from 'next/link'
 interface ProjectRisksListProps {
   projectId: string
   risks: any[]
+  dashboard?: {
+    total?: number
+    byLevel?: { Crítico: number; Alto: number; Médio: number; Baixo: number }
+    byStatus?: Record<string, number>
+  }
 }
 
-export function ProjectRisksList({ projectId, risks }: ProjectRisksListProps) {
+export function ProjectRisksList({ projectId, risks, dashboard }: ProjectRisksListProps) {
   const handleDelete = async (riskId: string) => {
     if (confirm('Excluir este risco?')) {
       const result = await deleteProjectRisk(riskId, projectId)
@@ -25,18 +31,52 @@ export function ProjectRisksList({ projectId, risks }: ProjectRisksListProps) {
 
   const getSeverityColor = (sev: number) => {
     if (sev >= 15) return 'bg-red-500 hover:bg-red-600'
-    if (sev >= 8) return 'bg-orange-500 hover:bg-orange-600'
-    if (sev >= 4) return 'bg-yellow-500 hover:bg-yellow-600'
+    if (sev >= 10) return 'bg-orange-500 hover:bg-orange-600'
+    if (sev >= 5) return 'bg-yellow-500 hover:bg-yellow-600'
     return 'bg-green-500 hover:bg-green-600'
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-gray-500">Riscos Totais</p>
+            <p className="text-2xl font-bold">{dashboard?.total ?? risks.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-gray-500">Críticos</p>
+            <p className="text-2xl font-bold text-red-600">{dashboard?.byLevel?.Crítico ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-gray-500">Altos</p>
+            <p className="text-2xl font-bold text-orange-600">{dashboard?.byLevel?.Alto ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-gray-500">Médios</p>
+            <p className="text-2xl font-bold text-yellow-600">{dashboard?.byLevel?.Médio ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-gray-500">Baixos</p>
+            <p className="text-2xl font-bold text-green-600">{dashboard?.byLevel?.Baixo ?? 0}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" asChild>
+          <Link href={`/dashboard/projetos/${projectId}/riscos/importar`}>Importar Riscos</Link>
+        </Button>
         <Button asChild>
-          <Link href={`/dashboard/projetos/${projectId}/riscos/novo`}>
-            Novo Risco
-          </Link>
+          <Link href={`/dashboard/projetos/${projectId}/riscos/novo`}>Novo Risco</Link>
         </Button>
       </div>
 
@@ -72,18 +112,14 @@ export function ProjectRisksList({ projectId, risks }: ProjectRisksListProps) {
                   <TableRow key={risk.id}>
                     <TableCell className="font-medium">
                       {risk.description}
-                      <span className="block text-xs text-muted-foreground mt-1">
-                        {risk.category}
-                      </span>
+                      <span className="block text-xs text-muted-foreground mt-1">{risk.category}</span>
                     </TableCell>
                     <TableCell>{risk.type}</TableCell>
                     <TableCell>
                       {risk.probability} x {risk.impact}
                     </TableCell>
                     <TableCell>
-                      <Badge className={getSeverityColor(risk.severity)}>
-                        {risk.severity}
-                      </Badge>
+                      <Badge className={getSeverityColor(risk.severity)}>{risk.severity}</Badge>
                     </TableCell>
                     <TableCell>
                       <div className="text-sm">

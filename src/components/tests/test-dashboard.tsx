@@ -16,8 +16,8 @@ interface TestDashboardProps {
     medical: number // % Saude
     byResponsible: Record<string, { total: number, completed: number, percentage: number }>
     byStatus: Record<string, number>
-    chartData: Array<{ date: string, concluido: number, meta: number }>
-    dailyTable: Array<{ date: string, completed: number, accumulated: number, meta: number, saldo: number }>
+    chartData: Array<{ date: string, planejado: number, concluido: number, meta: number }>
+    dailyTable: Array<{ date: string, planned: number, completed: number, accumulatedPlanned: number, accumulated: number, meta: number, saldo: number }>
     targetDate: string
     businessDaysRemaining: number
     metaPerDay: number
@@ -95,6 +95,7 @@ export function TestDashboard({ stats }: TestDashboardProps) {
                             <YAxis fontSize={12} />
                             <Tooltip labelFormatter={val => new Date(val).toLocaleDateString('pt-BR')} />
                             <Legend />
+                            <Line type="monotone" dataKey="planejado" name="Planejado Acumulado" stroke="#2563eb" strokeWidth={2} dot={false} />
                             <Line type="monotone" dataKey="concluido" name="Concluído" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
                             <Line type="monotone" dataKey="meta" name="Meta" stroke="#f97316" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                         </LineChart>
@@ -182,7 +183,9 @@ export function TestDashboard({ stats }: TestDashboardProps) {
                 <TableHeader>
                    <TableRow>
                       <TableHead>Data</TableHead>
+                      <TableHead className="text-center">Planejado/Dia</TableHead>
                       <TableHead className="text-center">Concluído/Dia</TableHead>
+                      <TableHead className="text-center">Acum. Planejado</TableHead>
                       <TableHead className="text-center">Acumulado</TableHead>
                       <TableHead className="text-center">Meta</TableHead>
                       <TableHead className="text-center">Saldo</TableHead>
@@ -192,7 +195,9 @@ export function TestDashboard({ stats }: TestDashboardProps) {
                    {stats.dailyTable.map((row, idx) => (
                       <TableRow key={idx}>
                          <TableCell>{new Date(row.date).toLocaleDateString('pt-BR')}</TableCell>
+                         <TableCell className="text-center">{row.planned}</TableCell>
                          <TableCell className="text-center">{row.completed}</TableCell>
+                         <TableCell className="text-center text-blue-600">{row.accumulatedPlanned}</TableCell>
                          <TableCell className="text-center font-medium">{row.accumulated}</TableCell>
                          <TableCell className="text-center text-orange-600">{row.meta}</TableCell>
                          <TableCell className={`text-center font-bold ${row.saldo >= 0 ? 'text-green-600' : 'text-red-600'}`}>

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
 import { useState } from 'react'
@@ -10,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Pencil, Trash2, Upload, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Upload, Loader2, Download } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { toast } from 'sonner'
 import { createCutoverTask, updateCutoverTask, deleteCutoverTask, importCutoverFromExcel } from '@/app/actions/cutover-tasks'
 
@@ -128,6 +130,35 @@ export function CutoverTaskTable({ projectId, tasks, onRefresh }: CutoverTaskTab
     e.target.value = ''
   }
 
+
+  const handleExport = () => {
+    if (!tasks.length) {
+      toast.error('Não há tarefas para exportar')
+      return
+    }
+
+    const rows = tasks.map((task: any, index: number) => ({
+      Ordem: index + 1,
+      Atividade: task.activity,
+      Predecessora: task.predecessor || '',
+      Responsável: task.responsible || '',
+      Transacao: task.transaction || '',
+      DuracaoHoras: task.duration || '',
+      Inicio: task.startDate ? new Date(task.startDate).toLocaleDateString('pt-BR') : '',
+      Termino: task.endDate ? new Date(task.endDate).toLocaleDateString('pt-BR') : '',
+      NovoPrazo: task.newDeadline ? new Date(task.newDeadline).toLocaleDateString('pt-BR') : '',
+      Realizado: task.actualDate ? new Date(task.actualDate).toLocaleDateString('pt-BR') : '',
+      PercentualConcluido: task.percentComplete || 0,
+      Status: task.status,
+      Observacoes: task.observations || '',
+    }))
+
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Cutover')
+    XLSX.writeFile(wb, `cutover_${projectId}.xlsx`)
+  }
+
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
       pending: 'bg-gray-100 text-gray-700',
@@ -171,6 +202,9 @@ export function CutoverTaskTable({ projectId, tasks, onRefresh }: CutoverTaskTab
               <span>{importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />} Importar Excel</span>
             </Button>
           </label>
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="w-4 h-4 mr-2" /> Exportar
+          </Button>
           <Button onClick={openAdd}>
             <Plus className="w-4 h-4 mr-2" /> Nova Tarefa
           </Button>
