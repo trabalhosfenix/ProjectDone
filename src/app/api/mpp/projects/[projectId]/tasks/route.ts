@@ -8,7 +8,8 @@ export async function GET(
   try {
     const { projectId } = await params
     const { searchParams } = new URL(request.url)
-    const tasks = await getMppTasks(projectId, searchParams)
+    const tenantId = request.headers.get('x-tenant-id') || undefined
+    const tasks = await getMppTasks(projectId, searchParams, { tenantId })
     return NextResponse.json({ success: true, data: tasks })
   } catch (error) {
     console.error('Erro ao buscar tasks na MPP API:', error)

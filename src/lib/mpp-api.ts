@@ -1,5 +1,6 @@
 export const MPP_API_BASE_URL = process.env.MPP_API_BASE_URL || 'http://localhost:8000'
-export const MPP_TENANT_ID = process.env.MPP_TENANT_ID || '1'
+export const MPP_TENANT_ID = process.env.MPP_TENANT_ID || ''
+export const MPP_GANTT_TIMEOUT_MS = Number(process.env.MPP_GANTT_TIMEOUT_MS || '120000')
 
 const DEFAULT_MPP_API_BASE_URLS = [
   'http://mpp-api:8000',
@@ -9,6 +10,10 @@ const DEFAULT_MPP_API_BASE_URLS = [
 
 interface MppRawFetchOptions {
   timeoutMs?: number
+}
+
+interface MppRequestOptions extends MppRawFetchOptions {
+  tenantId?: string
 }
 
 export function getMppApiBaseUrls(): string[] {
@@ -32,15 +37,16 @@ function withTimeoutSignal(timeoutMs: number) {
   return { signal: controller.signal, clear: () => clearTimeout(timeout) }
 }
 
-function withMppHeaders(headersInit?: HeadersInit) {
+function withMppHeaders(headersInit?: HeadersInit, tenantId?: string) {
   const headers = new Headers(headersInit)
 
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json')
   }
 
-  if (!headers.has('x-tenant-id')) {
-    headers.set('x-tenant-id', MPP_TENANT_ID)
+  const resolvedTenantId = tenantId || MPP_TENANT_ID
+  if (!headers.has('x-tenant-id') && resolvedTenantId) {
+    headers.set('x-tenant-id', resolvedTenantId)
   }
 
   return headers
@@ -49,7 +55,7 @@ function withMppHeaders(headersInit?: HeadersInit) {
 export async function mppFetchRaw(
   path: string,
   init?: RequestInit,
-  options?: MppRawFetchOptions
+  options?: MppRequestOptions
 ): Promise<Response> {
   const timeoutMs = options?.timeoutMs ?? 30_000
   const baseUrls = getMppApiBaseUrls()
@@ -62,7 +68,7 @@ export async function mppFetchRaw(
     try {
       const response = await fetch(url, {
         ...init,
-        headers: withMppHeaders(init?.headers),
+        headers: withMppHeaders(init?.headers, options?.tenantId),
         signal,
         cache: 'no-store',
       })
@@ -78,8 +84,8 @@ export async function mppFetchRaw(
   throw new Error(`MPP API indisponível. Tentativas: ${errors.join(' | ')}`)
 }
 
-async function mppFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await mppFetchRaw(path, init)
+async function mppFetch<T>(path: string, init?: RequestInit, options?: MppRequestOptions): Promise<T> {
+  const response = await mppFetchRaw(path, init, options)
 
   if (!response.ok) {
     const text = await response.text()
@@ -106,10 +112,16 @@ export interface MppTask {
   duration?: number
 }
 
-export async function getMppTasks(projectId: string, searchParams?: URLSearchParams) {
+export async function getMppTasks(
+  projectId: string,
+  searchParams?: URLSearchParams,
+  options?: MppRequestOptions
+) {
   const query = searchParams?.toString()
   const data = await mppFetch<{ items?: MppTask[]; data?: MppTask[] }>(
-    `/v1/projects/${projectId}/tasks${query ? `?${query}` : ''}`
+    `/v1/projects/${projectId}/tasks${query ? `?${query}` : ''}`,
+    undefined,
+    options
   )
 
   const tasks = data.items || data.data || []
@@ -135,10 +147,14 @@ export async function getMppTasks(projectId: string, searchParams?: URLSearchPar
   }))
 }
 
-export async function getMppGantt(projectId: string) {
-  return mppFetch<Record<string, unknown>>(`/v1/projects/${projectId}/gantt`)
+export async function getMppGantt(projectId: string, options?: MppRequestOptions) {
+  return mppFetch<Record<string, unknown>>(
+    `/v1/projects/${projectId}/gantt`,
+    undefined,
+    { ...options, timeoutMs: options?.timeoutMs ?? MPP_GANTT_TIMEOUT_MS }
+  )
 }
 
-export async function getMppJob(jobId: string) {
-  return mppFetch<Record<string, unknown>>(`/v1/jobs/${jobId}`)
+export async function getMppJob(jobId: string, options?: MppRequestOptions) {
+  return mppFetch<Record<string, unknown>>(`/v1/jobs/${jobId}`, undefined, options)
 }
