@@ -1,5 +1,5 @@
 export const MPP_API_BASE_URL = process.env.MPP_API_BASE_URL || 'http://localhost:8000'
-export const MPP_TENANT_ID = process.env.MPP_TENANT_ID || 'default'
+export const MPP_TENANT_ID = process.env.MPP_TENANT_ID || '1'
 
 const DEFAULT_MPP_API_BASE_URLS = [
   'http://mpp-api:8000',
