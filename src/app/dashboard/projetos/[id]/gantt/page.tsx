@@ -7,12 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
-import { Calendar, Filter, RefreshCw, Search } from 'lucide-react'
+import { Calendar, Filter, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProjectPageHeader } from "@/components/project/project-page-header"
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { ProjectMppContext } from '@/components/project/project-mpp-context'
 
 interface RawGanttTask {
   id?: string
@@ -76,8 +76,6 @@ export default function GanttPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [responsibleFilter, setResponsibleFilter] = useState('all')
   const [hideSummary, setHideSummary] = useState(false)
-  const [linkedMppProjectId, setLinkedMppProjectId] = useState<string | null>(null)
-  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     loadTasks()
@@ -93,9 +91,6 @@ export default function GanttPage() {
           if (!contextResponse.ok) return undefined
           const context = await contextResponse.json()
           const mppId = context?.mppProjectId ? String(context.mppProjectId) : undefined
-          if (mppId) {
-            setLinkedMppProjectId(mppId)
-          }
           return mppId
         } catch {
           return undefined
@@ -327,10 +322,7 @@ export default function GanttPage() {
              projectId={projectId}
         >
           <div className="flex items-center gap-4">
-            <Button variant="outline" onClick={handleSyncNow} disabled={syncing || !linkedMppProjectId}>
-              <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
-              Sincronizar MPP
-            </Button>
+            <ProjectMppContext projectId={projectId} compact onSynced={loadTasks} />
             <Select value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
               <SelectTrigger className="w-[150px]">
                 <Calendar className="w-4 h-4 mr-2" />
