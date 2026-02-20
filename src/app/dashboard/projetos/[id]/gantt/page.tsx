@@ -62,6 +62,55 @@ const normalizeDependencies = (value: unknown) => {
   return ''
 }
 
+interface RawGanttTask {
+  id?: string
+  uid?: string | number
+  task?: string
+  name?: string
+  wbs?: string
+  start?: string | null
+  finish?: string | null
+  end?: string | null
+  datePlanned?: string | null
+  datePlannedEnd?: string | null
+  percent_complete?: number
+  metadata?: { progress?: number }
+  dependencies?: unknown
+  responsible?: string
+  status?: string
+  outline_level?: number
+  is_summary?: boolean
+}
+
+const toIsoDate = (value?: string | null) => {
+  if (!value) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString().slice(0, 10)
+}
+
+const normalizeDependencies = (value: unknown) => {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+
+  if (Array.isArray(value)) {
+    const depIds = value
+      .map((dep) => {
+        if (typeof dep === 'string' || typeof dep === 'number') return String(dep)
+        if (dep && typeof dep === 'object') {
+          const maybe = dep as Record<string, unknown>
+          return String(maybe.id || maybe.predecessor_id || maybe.predecessorId || '').trim()
+        }
+        return ''
+      })
+      .filter(Boolean)
+
+    return depIds.join(',')
+  }
+
+  return ''
+}
+
 export default function GanttPage() {
   const params = useParams()
   const searchParams = useSearchParams()
