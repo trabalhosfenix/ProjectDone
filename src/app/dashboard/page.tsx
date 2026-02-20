@@ -13,7 +13,14 @@ export default async function DashboardPage() {
     getRecentActivities(),
     getStatusOptions(),
     prisma.projectRisk.count(),
-    prisma.issue.count({ where: { status: { not: 'Resolvida' } } })
+    prisma.issue.count({
+      where: {
+        OR: [
+          { statusId: null },
+          { status: { is: { isFinal: false } } },
+        ],
+      },
+    })
   ]);
 
   // Local sync calculation (Instant)
@@ -25,8 +32,8 @@ export default async function DashboardPage() {
   return (
     <div className="h-screen">
       <AdminPanel 
-        initialItems={localItems}
-        stats={combinedStats}
+        initialItems={items}
+        stats={stats}
         curvaSData={curvaSData}
         recentActivities={recentActivities}
         statusOptions={statusOptions.length > 0 ? statusOptions : [
