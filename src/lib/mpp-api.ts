@@ -1,5 +1,6 @@
 export const MPP_API_BASE_URL = process.env.MPP_API_BASE_URL || 'http://localhost:8000'
 export const MPP_TENANT_ID = process.env.MPP_TENANT_ID || ''
+export const MPP_GANTT_TIMEOUT_MS = Number(process.env.MPP_GANTT_TIMEOUT_MS || '120000')
 
 const DEFAULT_MPP_API_BASE_URLS = [
   'http://mpp-api:8000',
@@ -147,7 +148,11 @@ export async function getMppTasks(
 }
 
 export async function getMppGantt(projectId: string, options?: MppRequestOptions) {
-  return mppFetch<Record<string, unknown>>(`/v1/projects/${projectId}/gantt`, undefined, options)
+  return mppFetch<Record<string, unknown>>(
+    `/v1/projects/${projectId}/gantt`,
+    undefined,
+    { ...options, timeoutMs: options?.timeoutMs ?? MPP_GANTT_TIMEOUT_MS }
+  )
 }
 
 export async function getMppJob(jobId: string, options?: MppRequestOptions) {
