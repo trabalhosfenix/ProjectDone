@@ -1,27 +1,26 @@
-"use client";
+'use client'
 
-import { GanttChart } from "./gantt-chart";
-import { format } from "date-fns";
+import { format } from 'date-fns'
+import { GanttChart } from './gantt-chart'
 
 export interface GanttSplitTask {
-  id: string;
-  name: string;
-  start: string;
-  end: string;
-  progress: number;
-  dependencies?: string;
-  // Extra columns
-  wbs?: string; // EAP
-  responsible?: string;
-  statusLabel?: string; // DB status or calculated
+  id: string
+  name: string
+  start: string
+  end: string
+  progress: number
+  dependencies?: string
+  wbs?: string
+  responsible?: string
+  statusLabel?: string
 }
 
 interface GanttSplitViewProps {
-  tasks: GanttSplitTask[];
-  onTaskClick?: (task: GanttSplitTask) => void;
-  onDateChange?: (task: GanttSplitTask, start: Date, end: Date) => void;
-  onProgressChange?: (task: GanttSplitTask, progress: number) => void;
-  viewMode?: "Day" | "Week" | "Month" | "Year";
+  tasks: GanttSplitTask[]
+  onTaskClick?: (task: GanttSplitTask) => void
+  onDateChange?: (task: GanttSplitTask, start: Date, end: Date) => void
+  onProgressChange?: (task: GanttSplitTask, progress: number) => void
+  viewMode?: 'Day' | 'Week' | 'Month' | 'Year'
 }
 
 export function GanttSplitView({
@@ -29,9 +28,8 @@ export function GanttSplitView({
   onTaskClick,
   onDateChange,
   onProgressChange,
-  viewMode = "Week",
+  viewMode = 'Week',
 }: GanttSplitViewProps) {
-  // Status Logic Helper
   const safeDate = (value: string) => {
     const parsed = new Date(value)
     return Number.isNaN(parsed.getTime()) ? null : parsed
@@ -42,102 +40,81 @@ export function GanttSplitView({
     return date ? format(date, 'dd/MM/yy') : '--/--/--'
   }
 
-  const getStatusBadge = (task: GanttSplitTask) => {
-    const now = new Date();
-    const start = safeDate(task.start);
-    const end = safeDate(task.end);
-    const progress = task.progress;
+  const taskDepth = (wbs?: string) => {
+    if (!wbs) return 0
+    return Math.max(0, wbs.split('.').filter(Boolean).length - 1)
+  }
 
-    if (progress >= 100) {
-      return <span className="px-2 py-0.5 rounded textxs font-semibold bg-green-100 text-green-700">Concluído</span>;
+  const rowStatus = (task: GanttSplitTask) => {
+    const now = new Date()
+    const start = safeDate(task.start)
+    const end = safeDate(task.end)
+
+    if (task.progress >= 100) {
+      return { label: 'Concluído', classes: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
     }
-    
-    // Check overdue
-    // If end date is before today (ignoring time for simplicity or matching day)
+
     if (end && end < now) {
-       return <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">Atrasado</span>;
+      return { label: 'Atrasado', classes: 'bg-rose-100 text-rose-700 border-rose-200' }
     }
 
-    // Check in progress
     if (start && end && start <= now && end >= now) {
-        return <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700">Em andamento</span>;
+      return { label: 'Em andamento', classes: 'bg-blue-100 text-blue-700 border-blue-200' }
     }
 
-    return <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-700">Não iniciado</span>;
-  };
+    return { label: 'Não iniciado', classes: 'bg-slate-100 text-slate-700 border-slate-200' }
+  }
 
-  // We need to scroll both lists together?
-  // Since we are not doing a complex virtual scroll sync, we can just put them side-by-side in a container
-  // that scrolls the whole page? 
-  // No, if the Gantt is wide, we want horizontal scroll on Gantt ONLY, but Vertical scroll should interact.
-  // The layout requested often has:
-  // [Table (Fixed Width)] [Gantt (Flex, Overflow X)]
-  // And a common Vertical Scrollbar for the list content.
-  // Frappe Gantt renders the whole SVG.
-  // So we can put Table and Gantt in a flex row.
-  // The header of Frappe Gantt might be tricky to align with Table Header vertically if we just dump them in.
-  // BUT Frappe Gantt includes headers.
-  // We should create a custom Table Header that aligns with Frappe Header height.
-  
-  // Wait, `frappe-gantt` header height varies or is fixed.
-  // Default header height is usually around 50-60px depending on view mode (Month view adds lower/upper).
-  // I will check if we can offset the table header to match. 
-  
   return (
-    <div className="flex border rounded-lg bg-white overflow-hidden h-full min-h-[500px]">
-      {/* LEFT: Data Table */}
-      <div className="flex-none w-[600px] flex flex-col border-r border-gray-200 bg-white z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
-        {/* Header - Fixed Height */}
-        <div className="h-[60px] bg-[#f9fafb] border-b border-gray-200 flex items-end">
-             <div className="flex w-full text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                <div className="w-12 p-2 border-r text-center">EAP</div>
-                <div className="flex-1 p-2 border-r">Atividades</div>
-                <div className="w-24 p-2 border-r">Responsável</div>
-                <div className="w-20 p-2 border-r text-center">Início</div>
-                <div className="w-20 p-2 border-r text-center">Fim</div>
-                <div className="w-12 p-2 border-r text-center">%</div>
-                <div className="w-24 p-2 text-center">Status</div>
-             </div>
+    <div className="flex h-full min-h-[620px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <aside className="flex w-[560px] shrink-0 flex-col border-r border-slate-200 bg-white">
+        <div className="grid h-[54px] grid-cols-[72px_minmax(0,1fr)_124px_84px_84px_56px_116px] items-center border-b border-slate-200 bg-slate-50 px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          <span className="px-2">EAP</span>
+          <span className="px-2">Atividade</span>
+          <span className="px-2">Responsável</span>
+          <span className="px-1 text-center">Início</span>
+          <span className="px-1 text-center">Fim</span>
+          <span className="px-1 text-center">%</span>
+          <span className="px-1 text-center">Status</span>
         </div>
-        
-        {/* Rows - Scrollable (hidden scrollbar, synced via main container scroll ideally or just allow page scroll) */}
-        {/* Actually, if we want Frappe Gantt to handle scroll, we usually insert it. */}
-        {/* Let's Try: Flex container of Table and Gantt. */}
-        <div className="flex-1 bg-white">
-            {tasks.map((task, idx) => (
-                <div 
-                    key={task.id} 
-                    className="flex items-center text-sm border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
-                    style={{ height: '38px', boxSizing: 'border-box' }} // Exact match to frappe default
-                    onClick={() => onTaskClick?.(task)}
-                >
-                    <div className="w-12 px-2 text-center text-gray-400 font-mono text-xs border-r h-full flex items-center justify-center bg-gray-50/50">{task.wbs || (idx + 1)}</div>
-                    <div className="flex-1 px-3 truncate h-full flex items-center border-r font-medium text-gray-800" title={task.name}>{task.name}</div>
-                    <div className="w-24 px-2 truncate h-full flex items-center border-r text-xs text-gray-600" title={task.responsible}>
-                        {task.responsible ? task.responsible.split(' ')[0] : '-'}
-                    </div>
-                    <div className="w-20 px-1 text-center h-full flex items-center justify-center border-r text-xs text-gray-500">
-                        {formatDate(task.start)}
-                    </div>
-                    <div className="w-20 px-1 text-center h-full flex items-center justify-center border-r text-xs text-gray-500">
-                        {formatDate(task.end)}
-                    </div>
-                    <div className="w-12 px-1 text-center h-full flex items-center justify-center border-r text-xs font-semibold text-gray-700">
-                        {task.progress}%
-                    </div>
-                    <div className="w-24 px-1 text-center h-full flex items-center justify-center">
-                        {getStatusBadge(task)}
-                    </div>
-                </div>
-            ))}
-        </div>
-      </div>
 
-      {/* RIGHT: Gantt Chart */}
-      <div className="flex-1 overflow-hidden flex flex-col relative">
-          {/* We rely on Frappe Gantt internal scrolling for X, but header Y alignment is key. */}
-          {/* We pass options to GanttChart to match heights */}
-          <GanttChart 
+        <div className="flex-1 overflow-y-auto">
+          {tasks.map((task, idx) => {
+            const depth = taskDepth(task.wbs)
+            const status = rowStatus(task)
+
+            return (
+              <button
+                key={task.id}
+                type="button"
+                className="grid h-[38px] w-full grid-cols-[72px_minmax(0,1fr)_124px_84px_84px_56px_116px] items-center border-b border-slate-100 px-2 text-left text-sm hover:bg-slate-50"
+                onClick={() => onTaskClick?.(task)}
+              >
+                <span className="truncate px-2 font-mono text-xs text-slate-500">{task.wbs || idx + 1}</span>
+                <span className="truncate px-2 font-medium text-slate-800" style={{ paddingLeft: `${8 + depth * 14}px` }} title={task.name}>
+                  {depth > 0 ? '└ ' : ''}
+                  {task.name}
+                </span>
+                <span className="truncate px-2 text-xs text-slate-600" title={task.responsible || ''}>
+                  {task.responsible ? task.responsible.split(' ')[0] : '-'}
+                </span>
+                <span className="px-1 text-center text-xs text-slate-500">{formatDate(task.start)}</span>
+                <span className="px-1 text-center text-xs text-slate-500">{formatDate(task.end)}</span>
+                <span className="px-1 text-center text-xs font-semibold text-slate-700">{task.progress}%</span>
+                <span className="px-1 text-center">
+                  <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${status.classes}`}>
+                    {status.label}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </aside>
+
+      <section className="flex min-w-0 flex-1 flex-col bg-white">
+        <div className="h-full min-h-[620px]">
+          <GanttChart
             tasks={tasks}
             viewMode={viewMode}
             onTaskClick={onTaskClick}
@@ -146,7 +123,8 @@ export function GanttSplitView({
             barHeight={20}
             padding={18}
           />
-      </div>
+        </div>
+      </section>
     </div>
-  );
+  )
 }

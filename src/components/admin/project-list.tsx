@@ -62,6 +62,14 @@ const SOURCE_TYPES = {
   api: { label: "API", icon: Database, color: "bg-orange-100 text-orange-700" }
 };
 
+const normalizeSource = (source?: string | null): keyof typeof SOURCE_TYPES => {
+  const normalized = String(source || "local").toLowerCase();
+  if (normalized === "mpp" || normalized === "excel" || normalized === "api") {
+    return normalized;
+  }
+  return "local";
+};
+
 export function ProjectList() {
   const { toast } = useToast();
   const [projects, setProjects] = useState<any[]>([]);
@@ -183,12 +191,18 @@ export function ProjectList() {
       case "local":
         return projects.map(p => ({ ...p, source: 'local' }));
       case "imported":
-        return importedProjects.map(p => ({ ...p, source: p.sourceFormat || 'mpp' }));
+        return importedProjects.map((p) => ({
+          ...p,
+          source: normalizeSource(p.sourceFormat),
+        }));
       case "all":
       default:
         return [
           ...projects.map(p => ({ ...p, source: 'local' })),
-          ...importedProjects.map(p => ({ ...p, source: p.sourceFormat || 'mpp' }))
+          ...importedProjects.map((p) => ({
+            ...p,
+            source: normalizeSource(p.sourceFormat),
+          }))
         ].sort((a, b) => {
           // Ordenar por data de criação/importação (mais recente primeiro)
           const dateA = a.createdAt || a.importedAt;
@@ -201,7 +215,7 @@ export function ProjectList() {
   const displayProjects = getDisplayProjects();
 
   const getSourceBadge = (project: any) => {
-    const source = project.source || 'local';
+    const source = normalizeSource(project.source);
     const config = SOURCE_TYPES[source as keyof typeof SOURCE_TYPES] || SOURCE_TYPES.local;
     
     return (
@@ -357,8 +371,9 @@ export function ProjectList() {
   };
 
   // Função para navegar para detalhes do projeto importado
-  const handleViewImported = (projectId: string) => {
-    window.location.href = `/dashboard/projetos-importados/${projectId}`;
+  const handleViewImported = (projectId: string, externalUid?: string | null) => {
+    const query = externalUid ? `?mppProjectId=${encodeURIComponent(externalUid)}` : "";
+    window.location.href = `/dashboard/projetos/${projectId}/gantt${query}`;
   };
 
   if (loading && view === "list") {
@@ -787,7 +802,7 @@ export function ProjectList() {
                       <td className="p-4 text-center text-sm">{project.area || "-"}</td>
                       <td className="p-4 text-center">
                         <span className="text-blue-600 font-semibold">
-                          {project._count?.items || project.totalTasks || 0}
+                          {project._count?.items ?? project.totalItems ?? project.totalTasks ?? 0}
                         </span>
                       </td>
                       <td className="p-4">
@@ -827,11 +842,11 @@ export function ProjectList() {
                             // Ações para projetos importados
                             <>
                               <button
-                                onClick={() => handleViewImported(project.id)}
+                                onClick={() => handleViewImported(project.id, project.externalUid)}
                                 className="flex items-center gap-1 text-green-600 hover:text-green-800 text-sm font-medium hover:underline"
                               >
                                 <Eye className="w-3 h-3" />
-                                Visualizar
+                                Abrir Gantt
                               </button>
                               <button
                                 onClick={() => handleSync(project.id)}
@@ -842,7 +857,18 @@ export function ProjectList() {
                                 {syncingId === project.id ? 'Sinc...' : 'Sincronizar'}
                               </button>
                               <button
-                                onClick={() => window.open(`/api/export/project/${project.id}`, '_blank')}
+                                onClick={() => {
+                                  if (!project.externalUid) {
+                                    toast({
+                                      title: "Exportação indisponível",
+                                      description: "Este projeto não possui identificador externo para exportação.",
+                                      variant: "warning"
+                                    });
+                                    return;
+                                  }
+
+                                  window.open(`/api/mpp/projects/${project.externalUid}/export/json`, '_blank');
+                                }}
                                 className="flex items-center gap-1 text-purple-600 hover:text-purple-800 text-sm font-medium hover:underline"
                               >
                                 <Download className="w-3 h-3" />

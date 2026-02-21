@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { syncProjectProgress } from '@/lib/project-progress'
 
 /**
  * Buscar todas as tarefas do projeto (sem hierarquia por enquanto)
@@ -140,9 +141,11 @@ export async function updateProjectItem(
     })
 
     if (currentItem.projectId) {
+      await syncProjectProgress(currentItem.projectId)
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/monitorar`)
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/cronograma`)
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/kanban`)
+      revalidatePath(`/dashboard/projetos/${currentItem.projectId}/situacao`)
     }
 
     return { success: true, data: item }

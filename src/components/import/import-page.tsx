@@ -42,6 +42,7 @@ export default function ImportProjectPage() {
   const [status, setStatus] = useState<ImportStatus>('idle')
   const [jobId, setJobId] = useState<string | null>(null)
   const [projectId, setProjectId] = useState<string | null>(null)
+  const [localProjectId, setLocalProjectId] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [message, setMessage] = useState<string>('')
 
@@ -96,6 +97,20 @@ export default function ImportProjectPage() {
       }
 
       if (nextStatus === 'completed') {
+        const targetMppProjectId = resolvedProjectId || projectId
+        if (targetMppProjectId) {
+          const syncResponse = await fetch('/api/mpp/sync-project', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mppProjectId: targetMppProjectId }),
+          })
+          const syncResult = await syncResponse.json()
+          if (syncResponse.ok && syncResult.success) {
+            setLocalProjectId(String(syncResult.localProjectId))
+          } else {
+            toast.error(syncResult.error || 'Falha ao sincronizar projeto importado')
+          }
+        }
         toast.success('Importação concluída com sucesso')
         return
       }
@@ -202,13 +217,15 @@ export default function ImportProjectPage() {
               {(status === 'processing' || status === 'uploading') && <Progress value={progress} className="h-2" />}
               {message && <p className="text-sm text-gray-700">{message}</p>}
               {jobId && <p className="text-xs text-gray-500">Job ID: {jobId}</p>}
-              {projectId && (
+              {(localProjectId || projectId) && (
                 <div className="pt-2">
                   <Button
                     size="sm"
                     onClick={() => {
-                      persistMppLink(String(projectId), String(projectId))
-                      router.push(`/dashboard/projetos/${projectId}/gantt?mppProjectId=${projectId}`)
+                      const targetMppProjectId = String(projectId)
+                      const targetLocalProjectId = String(localProjectId || projectId)
+                      persistMppLink(targetLocalProjectId, targetMppProjectId)
+                      router.push(`/dashboard/projetos/${targetLocalProjectId}/gantt?mppProjectId=${targetMppProjectId}`)
                     }}
                   >
                     Abrir Gantt do projeto

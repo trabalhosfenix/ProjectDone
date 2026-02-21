@@ -118,7 +118,23 @@ export default function ImportarPage() {
       if (nextStatus === 'completed') {
         toast.success('Importação concluída com sucesso!')
         const targetMppProjectId = resolvedProjectId || resolvedMppProjectId || projectId
-        router.push(`/dashboard/projetos/${projectId}/gantt?mppProjectId=${targetMppProjectId}`)
+        const syncResponse = await fetch('/api/mpp/sync-project', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mppProjectId: targetMppProjectId,
+            localProjectId: projectId,
+          }),
+        })
+        const syncResult = await syncResponse.json()
+
+        if (!syncResponse.ok || !syncResult.success) {
+          toast.error(syncResult.error || 'Falha ao sincronizar projeto importado com base local')
+          return
+        }
+
+        const localProjectId = String(syncResult.localProjectId || projectId)
+        router.push(`/dashboard/projetos/${localProjectId}/gantt?mppProjectId=${targetMppProjectId}`)
         return
       }
 

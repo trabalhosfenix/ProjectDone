@@ -1,15 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
-import { Calendar } from 'lucide-react'
+import { Calendar, Filter, RefreshCw, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProjectPageHeader } from "@/components/project/project-page-header"
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { ProjectMppContext } from '@/components/project/project-mpp-context'
 
 interface RawGanttTask {
   id?: string
@@ -69,6 +72,12 @@ export default function GanttPage() {
   const [tasks, setTasks] = useState<GanttSplitTask[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'Day' | 'Week' | 'Month' | 'Year'>('Week')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [responsibleFilter, setResponsibleFilter] = useState('all')
+  const [hideSummary, setHideSummary] = useState(false)
+  const [linkedMppProjectId, setLinkedMppProjectId] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     loadTasks()
@@ -78,6 +87,18 @@ export default function GanttPage() {
   const loadTasks = async () => {
     try {
       const mppProjectIdFromQuery = searchParams.get('mppProjectId')
+      const contextMppProjectId = await (async () => {
+        try {
+          const contextResponse = await fetch(`/api/mpp/project-context/${projectId}`, { cache: 'no-store' })
+          if (!contextResponse.ok) return undefined
+          const context = await contextResponse.json()
+          const mppId = context?.mppProjectId ? String(context.mppProjectId) : undefined
+          return mppId
+        } catch {
+          return undefined
+        }
+      })()
+
       const mappedMppProjectId = (() => {
         try {
           const map = JSON.parse(sessionStorage.getItem('mppProjectMap') || '{}')
@@ -90,6 +111,7 @@ export default function GanttPage() {
       const candidateProjectIds = Array.from(
         new Set([
           mppProjectIdFromQuery,
+          contextMppProjectId,
           mappedMppProjectId,
           projectId,
         ].filter(Boolean) as string[])
@@ -174,6 +196,11 @@ export default function GanttPage() {
         .filter((item): item is GanttSplitTask => Boolean(item))
 
       setTasks(ganttTasks)
+
+      if (!linkedMppProjectId && candidateProjectIds.length > 0) {
+        const best = candidateProjectIds.find((id) => id !== projectId) || candidateProjectIds[0]
+        setLinkedMppProjectId(best)
+      }
     } catch (e) {
       console.error('Erro ao carregar tarefas:', e)
       toast.error('Erro ao carregar cronograma')
@@ -181,6 +208,43 @@ export default function GanttPage() {
       setLoading(false)
     }
   }
+
+  const statusOf = (task: GanttSplitTask) => {
+    if (task.progress >= 100) return 'completed'
+    const now = new Date()
+    const end = new Date(task.end)
+    const start = new Date(task.start)
+    if (end < now) return 'late'
+    if (start <= now && end >= now) return 'in_progress'
+    return 'not_started'
+  }
+
+  const responsibleOptions = useMemo(() => {
+    const values = Array.from(new Set(tasks.map((task) => task.responsible).filter(Boolean) as string[]))
+    return values.sort((a, b) => a.localeCompare(b))
+  }, [tasks])
+
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      if (hideSummary && (task.wbs === '0' || task.name.toLowerCase().includes('cronograma'))) {
+        return false
+      }
+
+      if (search && !task.name.toLowerCase().includes(search.toLowerCase()) && !(task.wbs || '').toLowerCase().includes(search.toLowerCase())) {
+        return false
+      }
+
+      if (responsibleFilter !== 'all' && (task.responsible || '') !== responsibleFilter) {
+        return false
+      }
+
+      if (statusFilter !== 'all' && statusOf(task) !== statusFilter) {
+        return false
+      }
+
+      return true
+    })
+  }, [tasks, hideSummary, search, responsibleFilter, statusFilter])
 
   const handleTaskClick = (task: any) => {
     toast.info(`Tarefa: ${task.name}`)
@@ -215,6 +279,39 @@ export default function GanttPage() {
     }
   }
 
+  const handleSyncNow = async () => {
+    const mppProjectId = linkedMppProjectId || searchParams.get('mppProjectId')
+
+    if (!mppProjectId) {
+      toast.error('Projeto MPP não vinculado para sincronização')
+      return
+    }
+
+    try {
+      setSyncing(true)
+      const response = await fetch('/api/mpp/sync-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mppProjectId,
+          localProjectId: projectId,
+        }),
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Falha ao sincronizar projeto')
+      }
+
+      toast.success(`Sincronização concluída (${result.importedTasks || 0} tarefas atualizadas)`)
+      await loadTasks()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao sincronizar projeto')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <div className="h-full bg-gray-50 flex flex-col">
       <ProjectDetailTabs projectId={projectId} />
@@ -226,7 +323,17 @@ export default function GanttPage() {
              description="Visualização visual do cronograma do projeto."
              projectId={projectId}
         >
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <ProjectMppContext projectId={projectId} compact onSynced={loadTasks} />
+            <button
+              onClick={handleSyncNow}
+              disabled={syncing}
+              className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              title="Sincronizar tarefas do cronograma com o projeto local"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Sincronizando...' : 'Sincronizar'}
+            </button>
             <Select value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
               <SelectTrigger className="w-[150px]">
                 <Calendar className="w-4 h-4 mr-2" />
@@ -242,14 +349,52 @@ export default function GanttPage() {
           </div>
         </ProjectPageHeader>
 
-        <Card>
+        <Card className="shadow-sm border-0 ring-1 ring-gray-200/80">
           <CardHeader>
-            <CardTitle className="text-lg">
-              Cronograma Visual
-              <span className="text-sm font-normal text-gray-500 ml-2">
-                ({tasks.length} tarefas)
-              </span>
-            </CardTitle>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                Cronograma Visual
+                <Badge variant="secondary">{filteredTasks.length} tarefas</Badge>
+              </CardTitle>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 w-full lg:w-auto">
+                <div className="relative md:col-span-2">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar por nome ou EAP"
+                    className="pl-9"
+                  />
+                </div>
+
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger>
+                    <Filter className="w-4 h-4 mr-2 text-gray-500" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os status</SelectItem>
+                    <SelectItem value="not_started">Não iniciado</SelectItem>
+                    <SelectItem value="in_progress">Em andamento</SelectItem>
+                    <SelectItem value="late">Atrasado</SelectItem>
+                    <SelectItem value="completed">Concluído</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={responsibleFilter} onValueChange={setResponsibleFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Responsável" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos responsáveis</SelectItem>
+                    {responsibleOptions.map((name) => (
+                      <SelectItem key={name} value={name}>{name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {loading ? (
@@ -258,7 +403,7 @@ export default function GanttPage() {
               </div>
             ) : (
               <GanttSplitView
-                tasks={tasks}
+                tasks={filteredTasks}
                 viewMode={viewMode}
                 onTaskClick={handleTaskClick}
                 onDateChange={handleDateChange}
@@ -268,8 +413,9 @@ export default function GanttPage() {
           </CardContent>
         </Card>
 
-        <div className="mt-4 text-sm text-gray-500">
-          <p><strong>Dica:</strong> Arraste as barras para alterar datas. Clique em uma tarefa para ver detalhes.</p>
+        <div className="mt-4 text-sm text-gray-500 flex items-center gap-2">
+          <input id="hide-summary" type="checkbox" checked={hideSummary} onChange={(e) => setHideSummary(e.target.checked)} />
+          <label htmlFor="hide-summary">Ocultar tarefas de resumo para focar nas entregas executáveis</label>
         </div>
       </div>
     </div>
