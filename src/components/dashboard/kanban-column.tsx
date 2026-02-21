@@ -33,6 +33,19 @@ interface KanbanColumnProps {
   ) => Promise<void>
 }
 
+function normalizeTaskTitle(task?: string | null) {
+  const value = String(task || '').trim()
+  return value || 'Tarefa sem titulo'
+}
+
+function normalizeOriginLabel(origin?: string | null) {
+  const key = String(origin || '').trim().toUpperCase()
+  if (!key) return 'Manual'
+  if (key === 'KANBAN' || key === 'MANUAL') return 'Manual'
+  if (key === 'CRONOGRAMA_IMPORT') return 'Importado'
+  return key
+}
+
 export function KanbanColumn({ id, title, items, projectId, onAdd, onCardClick, allowCreate = true, onQuickUpdate }: KanbanColumnProps) {
   const { setNodeRef } = useDroppable({ id })
   const [isAdding, setIsAdding] = useState(false)
@@ -161,7 +174,7 @@ function KanbanItem({
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [form, setForm] = useState({
-    task: item.task,
+    task: normalizeTaskTitle(item.task),
     responsible: item.responsible || '',
     priority: item.priority || 'Média',
     status: (item.status || 'A iniciar') as (typeof BOARD_COLUMNS)[number],
@@ -235,10 +248,10 @@ function KanbanItem({
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2 items-start">
             <span className={cn('text-[11px] font-black px-2.5 py-1 rounded-md border shadow-sm', priorityColor)}>{(item.priority || 'Média').toUpperCase()}</span>
-            <span className="text-[11px] font-black text-[#44546f] opacity-60 tracking-wider">{item.originSheet}</span>
+            <span className="text-[11px] font-black text-[#44546f] opacity-60 tracking-wider">{normalizeOriginLabel(item.originSheet)}</span>
           </div>
 
-          <h4 className="font-bold text-base text-[#172b4d] leading-tight break-words">{item.task}</h4>
+          <h4 className="font-bold text-base text-[#172b4d] leading-tight break-words">{normalizeTaskTitle(item.task)}</h4>
 
           {item.scenario && <p className="text-xs text-[#44546f] line-clamp-2 leading-relaxed opacity-80 italic">{item.scenario}</p>}
 

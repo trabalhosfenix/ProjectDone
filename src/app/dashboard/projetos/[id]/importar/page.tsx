@@ -15,6 +15,12 @@ import { ProjectPageHeader } from '@/components/project/project-page-header'
 
 type ImportStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'error'
 
+function getProjectNameHintFromFileName(fileName: string): string | undefined {
+  if (!fileName) return undefined
+  const withoutExtension = fileName.replace(/\.[^/.]+$/, '')
+  const normalized = withoutExtension.replace(/\s+/g, ' ').trim()
+  return normalized || undefined
+}
 
 function extractProjectId(payload: Record<string, unknown>) {
   const direct = payload.project_id || payload.projectId
@@ -52,6 +58,7 @@ export default function ImportarPage() {
   const [progress, setProgress] = useState(0)
   const [fileName, setFileName] = useState('')
   const [resolvedMppProjectId, setResolvedMppProjectId] = useState<string | null>(null)
+  const [syncMode, setSyncMode] = useState<'append' | 'upsert' | 'replace'>('upsert')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const persistMppLink = (legacyProjectId: string, mppProjectId: string) => {
@@ -124,6 +131,8 @@ export default function ImportarPage() {
           body: JSON.stringify({
             mppProjectId: targetMppProjectId,
             localProjectId: projectId,
+            syncMode,
+            projectNameHint: getProjectNameHintFromFileName(fileName),
           }),
         })
         const syncResult = await syncResponse.json()
@@ -239,6 +248,19 @@ export default function ImportarPage() {
                 <p className="text-sm text-gray-600">
                   Envie o arquivo para processamento assíncrono. O status do job será exibido nesta tela.
                 </p>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Estratégia de merge</label>
+                  <select
+                    value={syncMode}
+                    onChange={(e) => setSyncMode(e.target.value as 'append' | 'upsert' | 'replace')}
+                    className="w-full rounded border bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="upsert">Upsert (atualiza existentes e cria novas)</option>
+                    <option value="append">Append (só adiciona novas)</option>
+                    <option value="replace">Replace (substitui tarefas importadas da fonte)</option>
+                  </select>
+                </div>
 
                 <Button onClick={() => fileRef.current?.click()} disabled={status === 'uploading' || status === 'processing'}>
                   {status === 'uploading' || status === 'processing' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}

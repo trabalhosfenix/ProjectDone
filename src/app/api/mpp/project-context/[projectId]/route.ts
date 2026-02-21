@@ -9,11 +9,18 @@ export async function GET(
     const { projectId } = await params
 
     const imported = await prisma.importedProject.findFirst({
-      where: { projectId },
+      where: {
+        projectId,
+        source: 'MPP',
+      },
       select: {
         id: true,
         externalUid: true,
+        externalProjectId: true,
         source: true,
+        syncMode: true,
+        syncStatus: true,
+        lastSyncAt: true,
         projectId: true,
         updatedAt: true,
       },
@@ -33,8 +40,11 @@ export async function GET(
       linked: true,
       localProjectId: projectId,
       importedProjectId: imported.id,
-      mppProjectId: imported.externalUid,
+      mppProjectId: imported.externalProjectId || imported.externalUid,
       source: imported.source,
+      syncMode: imported.syncMode,
+      syncStatus: imported.syncStatus,
+      lastSyncAt: imported.lastSyncAt,
       updatedAt: imported.updatedAt,
     })
   } catch (error) {

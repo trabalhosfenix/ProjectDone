@@ -1,328 +1,484 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
-import { 
-  FileText, 
-  Download, 
-  Loader2, 
-  BarChart3, 
-  Users, 
-  Calendar, 
+import {
+  Download,
+  Loader2,
+  BarChart3,
+  Users,
+  Calendar,
   AlertTriangle,
   CheckCircle,
   BookOpen,
   FileSpreadsheet,
-  ArrowLeft
+  FileText,
 } from 'lucide-react'
-import Link from 'next/link'
 import { toast } from 'sonner'
-import { ProjectPageHeader } from "@/components/project/project-page-header"
+import { ProjectPageHeader } from '@/components/project/project-page-header'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
-interface ReportType {
+type ProjectItem = {
+  id: string
+  wbs: string | null
+  task: string | null
+  status: string | null
+  responsible: string | null
+  originSheet: string
+  datePlanned: string | null
+  datePlannedEnd: string | null
+  dateActual: string | null
+  metadata: unknown
+}
+
+type ProjectMember = {
+  role: string
+  effort: number | null
+  revenue: number | null
+  user: {
+    name: string | null
+    email: string
+  }
+}
+
+type ProjectRisk = {
+  description: string
+  type: string
+  probability: number
+  impact: number
+  severity: number
+  responseStrategy: string | null
+  owner: string | null
+  status: string
+}
+
+type LessonItem = {
+  title?: string
+  category?: string
+  type?: string
+  description?: string
+  recommendation?: string
+}
+
+type ProjectContext = {
+  project: {
+    id: string
+    name: string
+    code: string | null
+    status: string
+    type: string | null
+    description: string | null
+    justification: string | null
+    objective: string | null
+    assumptions: string | null
+    constraints: string | null
+    progress: number
+    budget: number
+    actualCost: number
+    startDate: string | null
+    endDate: string | null
+    realStartDate: string | null
+    realEndDate: string | null
+    managerName: string | null
+    client: string | null
+    createdAt: string
+    updatedAt: string
+  }
+  items: ProjectItem[]
+  members: ProjectMember[]
+  risks: ProjectRisk[]
+  lessons: LessonItem[]
+}
+
+type ReportType = {
   id: string
   title: string
   description: string
   icon: any
   available: boolean
+  countLabel: string
+}
+
+const formatDate = (value?: string | null) => {
+  if (!value) return '-'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return '-'
+  return parsed.toLocaleDateString('pt-BR')
+}
+
+const formatCurrency = (value?: number | null) => `R$ ${(Number(value || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const itemProgress = (item: ProjectItem) => {
+  const metadata = item.metadata && typeof item.metadata === 'object' ? (item.metadata as Record<string, unknown>) : {}
+  const raw = Number(metadata.progress ?? 0)
+  const baseProgress = Number.isFinite(raw) ? (raw <= 1 ? raw * 100 : raw) : 0
+  const statusText = String(item.status || '').toLowerCase()
+  if (statusText.includes('concl') || statusText.includes('done') || statusText.includes('completed')) return 100
+  return Math.max(0, Math.min(100, Math.round(baseProgress)))
+}
+
+const addPdfHeader = (doc: jsPDF, title: string, context: ProjectContext) => {
+  doc.setFontSize(16)
+  doc.text(title, 40, 40)
+
+  doc.setFontSize(11)
+  doc.text(`Projeto: ${context.project.name}`, 40, 62)
+  doc.text(`Codigo: ${context.project.code || '-'}`, 40, 78)
+  doc.text(`Status: ${context.project.status}`, 40, 94)
+  doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 40, 110)
+
+  return 130
 }
 
 export default function RelatoriosPage() {
   const params = useParams()
   const projectId = params.id as string
-  const [generating, setGenerating] = useState<string | null>(null)
 
-  const reportTypes: ReportType[] = [
-    {
-      id: 'eap',
-      title: 'Relatório de EAP',
-      description: 'Estrutura Analítica do Projeto com todos os componentes',
-      icon: BarChart3,
-      available: true
-    },
-    {
-      id: 'cronograma',
-      title: 'Relatório de Cronograma',
-      description: 'Lista de tarefas com datas, duração e progresso',
-      icon: Calendar,
-      available: true
-    },
-    {
-      id: 'riscos',
-      title: 'Matriz de Riscos',
-      description: 'Riscos identificados com probabilidade, impacto e plano de resposta',
-      icon: AlertTriangle,
-      available: true
-    },
-    {
-      id: 'equipe',
-      title: 'Relatório da Equipe',
-      description: 'Membros alocados, papéis e horas previstas',
-      icon: Users,
-      available: true
-    },
-    {
-      id: 'termo-abertura',
-      title: 'Termo de Abertura',
-      description: 'Documento formal de início do projeto',
-      icon: FileText,
-      available: true
-    },
-    {
-      id: 'termo-encerramento',
-      title: 'Termo de Encerramento',
-      description: 'Documento formal de fechamento do projeto',
-      icon: CheckCircle,
-      available: true
-    },
-    {
-      id: 'licoes',
-      title: 'Lições Aprendidas',
-      description: 'Compilação de aprendizados registrados',
-      icon: BookOpen,
-      available: true
-    },
-    {
-      id: 'completo',
-      title: 'Relatório Completo',
-      description: 'Consolidação de todas as informações do projeto',
-      icon: FileSpreadsheet,
-      available: true
+  const [generating, setGenerating] = useState<string | null>(null)
+  const [loadingContext, setLoadingContext] = useState(true)
+  const [context, setContext] = useState<ProjectContext | null>(null)
+
+  const loadContext = async () => {
+    setLoadingContext(true)
+    try {
+      const response = await fetch(`/api/projects/${projectId}/reports/context`, { cache: 'no-store' })
+      const payload = await response.json()
+
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(payload.error || 'Falha ao carregar dados dos relatorios')
+      }
+
+      setContext(payload.data as ProjectContext)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao carregar contexto dos relatorios')
+      setContext(null)
+    } finally {
+      setLoadingContext(false)
     }
-  ]
+  }
+
+  useEffect(() => {
+    loadContext()
+  }, [projectId])
+
+  const reportTypes: ReportType[] = useMemo(() => {
+    const itemsCount = context?.items.length || 0
+    const risksCount = context?.risks.length || 0
+    const membersCount = context?.members.length || 0
+    const lessonsCount = context?.lessons.length || 0
+
+    return [
+      {
+        id: 'eap',
+        title: 'Relatorio de EAP',
+        description: 'Estrutura analitica do projeto e componentes cadastrados.',
+        icon: BarChart3,
+        available: true,
+        countLabel: `${itemsCount} itens`,
+      },
+      {
+        id: 'cronograma',
+        title: 'Relatorio de Cronograma',
+        description: 'Tarefas, datas planejadas, progresso e responsaveis.',
+        icon: Calendar,
+        available: true,
+        countLabel: `${itemsCount} tarefas`,
+      },
+      {
+        id: 'riscos',
+        title: 'Matriz de Riscos',
+        description: 'Riscos, severidade, responsavel e estrategia de resposta.',
+        icon: AlertTriangle,
+        available: true,
+        countLabel: `${risksCount} riscos`,
+      },
+      {
+        id: 'equipe',
+        title: 'Relatorio da Equipe',
+        description: 'Membros, papeis, esforco e receita estimada.',
+        icon: Users,
+        available: true,
+        countLabel: `${membersCount} membros`,
+      },
+      {
+        id: 'termo-abertura',
+        title: 'Termo de Abertura',
+        description: 'Documento de inicio formal com objetivo e justificativa.',
+        icon: FileText,
+        available: true,
+        countLabel: context?.project.status || '-',
+      },
+      {
+        id: 'termo-encerramento',
+        title: 'Termo de Encerramento',
+        description: 'Documento de encerramento com resumo das entregas.',
+        icon: CheckCircle,
+        available: true,
+        countLabel: `${itemsCount} entregas`,
+      },
+      {
+        id: 'licoes',
+        title: 'Licoes Aprendidas',
+        description: 'Compilacao de licoes registradas no metadado do projeto.',
+        icon: BookOpen,
+        available: true,
+        countLabel: `${lessonsCount} licoes`,
+      },
+      {
+        id: 'completo',
+        title: 'Relatorio Completo',
+        description: 'Resumo executivo consolidado de escopo, prazo, equipe e riscos.',
+        icon: FileSpreadsheet,
+        available: true,
+        countLabel: 'Consolidado',
+      },
+    ]
+  }, [context])
 
   const generateReport = async (reportId: string) => {
-    setGenerating(reportId)
-    
-    try {
-      // Buscar dados do projeto
-      const response = await fetch(`/api/projects/${projectId}`)
-      const { data: project } = await response.json()
-      
-      if (!project) {
-        toast.error('Projeto não encontrado')
-        return
-      }
+    if (!context) {
+      toast.error('Contexto do projeto indisponivel para gerar relatorio')
+      return
+    }
 
-      // Gerar conteúdo HTML do relatório
-      let htmlContent = ''
-      const now = new Date().toLocaleDateString('pt-BR')
-      
-      const header = `
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Relatório - ${project.name}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
-            h1 { color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 10px; }
-            h2 { color: #374151; margin-top: 30px; }
-            table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background: #f3f4f6; }
-            .meta { color: #6b7280; font-size: 12px; margin-top: 20px; }
-            .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
-            .badge-green { background: #dcfce7; color: #166534; }
-            .badge-red { background: #fee2e2; color: #991b1b; }
-            .badge-yellow { background: #fef3c7; color: #92400e; }
-          </style>
-        </head>
-        <body>
-          <h1>${project.name}</h1>
-          <p><strong>Código:</strong> ${project.code || 'N/A'}</p>
-          <p><strong>Data do Relatório:</strong> ${now}</p>
-      `
-      
-      const footer = `
-          <div class="meta">
-            <p>Gerado automaticamente pelo sistema ProjectDone em ${now}</p>
-          </div>
-        </body>
-        </html>
-      `
+    setGenerating(reportId)
+
+    try {
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+      let currentY = addPdfHeader(doc, `Relatorio: ${reportTypes.find((r) => r.id === reportId)?.title || reportId}`, context)
 
       switch (reportId) {
-        case 'eap':
-          htmlContent = header + `
-            <h2>Estrutura Analítica do Projeto (EAP)</h2>
-            <p>Componentes do escopo do projeto organizados hierarquicamente.</p>
-            <table>
-              <tr><th>Código</th><th>Componente</th><th>Tipo</th></tr>
-              <tr><td>1.0</td><td>${project.name}</td><td>Projeto</td></tr>
-              ${project.items?.map((item: any, i: number) => `
-                <tr><td>1.${i + 1}</td><td>${item.name}</td><td>${item.originSheet || 'Componente'}</td></tr>
-              `).join('') || '<tr><td colspan="3">Nenhum componente cadastrado</td></tr>'}
-            </table>
-          ` + footer
+        case 'eap': {
+          autoTable(doc, {
+            startY: currentY,
+            head: [['WBS', 'Componente', 'Origem', 'Status']],
+            body:
+              context.items.length > 0
+                ? context.items.map((item) => [item.wbs || '-', item.task || '-', item.originSheet || '-', item.status || '-'])
+                : [['-', 'Nenhum componente cadastrado', '-', '-']],
+            bodyStyles: { fontSize: 9 },
+            headStyles: { fillColor: [30, 64, 175] },
+          })
           break
+        }
 
-        case 'cronograma':
-          htmlContent = header + `
-            <h2>Cronograma do Projeto</h2>
-            <table>
-              <tr><th>Tarefa</th><th>Início</th><th>Término</th><th>Progresso</th></tr>
-              ${project.items?.map((item: any) => `
-                <tr>
-                  <td>${item.name}</td>
-                  <td>${item.startDate ? new Date(item.startDate).toLocaleDateString('pt-BR') : '-'}</td>
-                  <td>${item.endDate ? new Date(item.endDate).toLocaleDateString('pt-BR') : '-'}</td>
-                  <td>${item.progress || 0}%</td>
-                </tr>
-              `).join('') || '<tr><td colspan="4">Nenhuma tarefa cadastrada</td></tr>'}
-            </table>
-          ` + footer
+        case 'cronograma': {
+          autoTable(doc, {
+            startY: currentY,
+            head: [['Tarefa', 'Inicio', 'Fim', 'Responsavel', 'Progresso']],
+            body:
+              context.items.length > 0
+                ? context.items.map((item) => [
+                    item.task || '-',
+                    formatDate(item.datePlanned),
+                    formatDate(item.datePlannedEnd),
+                    item.responsible || '-',
+                    `${itemProgress(item)}%`,
+                  ])
+                : [['Nenhuma tarefa cadastrada', '-', '-', '-', '0%']],
+            bodyStyles: { fontSize: 9 },
+            headStyles: { fillColor: [30, 64, 175] },
+          })
           break
+        }
 
-        case 'riscos':
-          const risksRes = await fetch(`/api/projects/${projectId}/risks`)
-          const risksData = await risksRes.json()
-          htmlContent = header + `
-            <h2>Matriz de Riscos</h2>
-            <table>
-              <tr><th>Risco</th><th>Tipo</th><th>P x I</th><th>Severidade</th><th>Estratégia</th></tr>
-              ${risksData.data?.map((risk: any) => `
-                <tr>
-                  <td>${risk.description}</td>
-                  <td>${risk.type}</td>
-                  <td>${risk.probability} x ${risk.impact}</td>
-                  <td><span class="badge ${risk.severity >= 15 ? 'badge-red' : risk.severity >= 8 ? 'badge-yellow' : 'badge-green'}">${risk.severity}</span></td>
-                  <td>${risk.responseStrategy}</td>
-                </tr>
-              `).join('') || '<tr><td colspan="5">Nenhum risco cadastrado</td></tr>'}
-            </table>
-          ` + footer
+        case 'riscos': {
+          autoTable(doc, {
+            startY: currentY,
+            head: [['Risco', 'Tipo', 'P x I', 'Severidade', 'Estrategia', 'Responsavel']],
+            body:
+              context.risks.length > 0
+                ? context.risks.map((risk) => [
+                    risk.description || '-',
+                    risk.type || '-',
+                    `${risk.probability} x ${risk.impact}`,
+                    String(risk.severity || 0),
+                    risk.responseStrategy || '-',
+                    risk.owner || '-',
+                  ])
+                : [['Nenhum risco cadastrado', '-', '-', '-', '-', '-']],
+            bodyStyles: { fontSize: 9 },
+            headStyles: { fillColor: [30, 64, 175] },
+          })
           break
+        }
 
-        case 'equipe':
-          htmlContent = header + `
-            <h2>Equipe do Projeto</h2>
-            <table>
-              <tr><th>Membro</th><th>Papel</th><th>Horas Alocadas</th><th>Receita/Hora</th></tr>
-              ${project.members?.map((m: any) => `
-                <tr>
-                  <td>${m.user?.name || m.user?.email || 'N/A'}</td>
-                  <td>${m.role}</td>
-                  <td>${m.allocatedHours || 0}h</td>
-                  <td>R$ ${(m.revenue || 0).toFixed(2)}</td>
-                </tr>
-              `).join('') || '<tr><td colspan="4">Nenhum membro cadastrado</td></tr>'}
-            </table>
-          ` + footer
+        case 'equipe': {
+          autoTable(doc, {
+            startY: currentY,
+            head: [['Membro', 'Papel', 'Esforco (h)', 'Receita/Hora']],
+            body:
+              context.members.length > 0
+                ? context.members.map((member) => [
+                    member.user?.name || member.user?.email || '-',
+                    member.role || '-',
+                    String(member.effort || 0),
+                    formatCurrency(member.revenue || 0),
+                  ])
+                : [['Nenhum membro cadastrado', '-', '0', formatCurrency(0)]],
+            bodyStyles: { fontSize: 9 },
+            headStyles: { fillColor: [30, 64, 175] },
+          })
           break
+        }
 
-        case 'termo-abertura':
-          htmlContent = header + `
-            <h2>Termo de Abertura do Projeto</h2>
-            <h3>1. Identificação</h3>
-            <p><strong>Nome:</strong> ${project.name}</p>
-            <p><strong>Código:</strong> ${project.code || 'N/A'}</p>
-            <p><strong>Status:</strong> ${project.status}</p>
-            <p><strong>Data Início:</strong> ${project.startDate ? new Date(project.startDate).toLocaleDateString('pt-BR') : 'N/A'}</p>
-            
-            <h3>2. Justificativa</h3>
-            <p>${project.justification || 'Não informada'}</p>
-            
-            <h3>3. Objetivo</h3>
-            <p>${project.objective || 'Não informado'}</p>
-            
-            <h3>4. Escopo</h3>
-            <p>${project.scope || 'Não informado'}</p>
-            
-            <h3>5. Aprovação</h3>
-            <p>___________________________ Data: ___/___/______</p>
-            <p>Sponsor / Patrocinador</p>
-          ` + footer
+        case 'termo-abertura': {
+          doc.setFontSize(12)
+          doc.text('1. Identificacao', 40, currentY)
+          doc.setFontSize(10)
+          currentY += 18
+          doc.text(`Nome: ${context.project.name}`, 40, currentY)
+          currentY += 14
+          doc.text(`Codigo: ${context.project.code || '-'}`, 40, currentY)
+          currentY += 14
+          doc.text(`Inicio previsto: ${formatDate(context.project.startDate)}`, 40, currentY)
+          currentY += 24
+
+          doc.setFontSize(12)
+          doc.text('2. Justificativa', 40, currentY)
+          currentY += 16
+          doc.setFontSize(10)
+          doc.text(doc.splitTextToSize(context.project.justification || 'Nao informada.', 520), 40, currentY)
+          currentY += 42
+
+          doc.setFontSize(12)
+          doc.text('3. Objetivo', 40, currentY)
+          currentY += 16
+          doc.setFontSize(10)
+          doc.text(doc.splitTextToSize(context.project.objective || 'Nao informado.', 520), 40, currentY)
+          currentY += 42
+
+          doc.setFontSize(12)
+          doc.text('4. Escopo/Descricao', 40, currentY)
+          currentY += 16
+          doc.setFontSize(10)
+          doc.text(doc.splitTextToSize(context.project.description || 'Nao informado.', 520), 40, currentY)
           break
+        }
 
-        case 'termo-encerramento':
-          htmlContent = header + `
-            <h2>Termo de Encerramento do Projeto</h2>
-            <h3>1. Identificação</h3>
-            <p><strong>Nome:</strong> ${project.name}</p>
-            <p><strong>Código:</strong> ${project.code || 'N/A'}</p>
-            <p><strong>Data Encerramento:</strong> ${now}</p>
-            
-            <h3>2. Resultados Alcançados</h3>
-            <p>O projeto foi concluído conforme planejado.</p>
-            
-            <h3>3. Entregas Realizadas</h3>
-            <ul>
-              ${project.items?.slice(0, 10).map((item: any) => `<li>${item.name}</li>`).join('') || '<li>Nenhuma entrega registrada</li>'}
-            </ul>
-            
-            <h3>4. Aceite Formal</h3>
-            <p>___________________________ Data: ___/___/______</p>
-            <p>Gerente do Projeto</p>
-            <br/>
-            <p>___________________________ Data: ___/___/______</p>
-            <p>Cliente / Sponsor</p>
-          ` + footer
+        case 'termo-encerramento': {
+          doc.setFontSize(12)
+          doc.text('Resumo de encerramento', 40, currentY)
+          currentY += 20
+
+          doc.setFontSize(10)
+          doc.text(`Data de encerramento real: ${formatDate(context.project.realEndDate)}`, 40, currentY)
+          currentY += 14
+          doc.text(`Progresso consolidado: ${Math.round(context.project.progress || 0)}%`, 40, currentY)
+          currentY += 14
+          doc.text(`Total de entregas registradas: ${context.items.length}`, 40, currentY)
+          currentY += 18
+
+          autoTable(doc, {
+            startY: currentY,
+            head: [['Entrega', 'Status', 'Fim planejado', 'Fim real']],
+            body: context.items.slice(0, 20).map((item) => [
+              item.task || '-',
+              item.status || '-',
+              formatDate(item.datePlannedEnd),
+              formatDate(item.dateActual),
+            ]),
+            bodyStyles: { fontSize: 9 },
+            headStyles: { fillColor: [30, 64, 175] },
+          })
           break
+        }
 
-        case 'licoes':
-          const metaRes = await fetch(`/api/projects/${projectId}/metadata?key=lessons`)
-          const lessonsData = await metaRes.json()
-          htmlContent = header + `
-            <h2>Lições Aprendidas</h2>
-            ${lessonsData.data?.map((lesson: any) => `
-              <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 8px;">
-                <h4>${lesson.title}</h4>
-                <p><strong>Categoria:</strong> ${lesson.category}</p>
-                <p><strong>Tipo:</strong> ${lesson.type || 'N/A'}</p>
-                <p>${lesson.description}</p>
-                ${lesson.recommendation ? `<p><strong>Recomendação:</strong> ${lesson.recommendation}</p>` : ''}
-              </div>
-            `).join('') || '<p>Nenhuma lição registrada.</p>'}
-          ` + footer
+        case 'licoes': {
+          autoTable(doc, {
+            startY: currentY,
+            head: [['Titulo', 'Categoria', 'Tipo', 'Descricao', 'Recomendacao']],
+            body:
+              context.lessons.length > 0
+                ? context.lessons.map((lesson) => [
+                    lesson.title || '-',
+                    lesson.category || '-',
+                    lesson.type || '-',
+                    lesson.description || '-',
+                    lesson.recommendation || '-',
+                  ])
+                : [['Nenhuma licao registrada', '-', '-', '-', '-']],
+            bodyStyles: { fontSize: 8 },
+            headStyles: { fillColor: [30, 64, 175] },
+            columnStyles: {
+              3: { cellWidth: 180 },
+              4: { cellWidth: 180 },
+            },
+          })
           break
+        }
 
-        default:
-          htmlContent = header + `
-            <h2>Relatório Completo do Projeto</h2>
-            <p><strong>Descrição:</strong> ${project.description || 'N/A'}</p>
-            <p><strong>Status:</strong> ${project.status}</p>
-            <p><strong>Progresso:</strong> ${project.progress || 0}%</p>
-            <p><strong>Orçamento:</strong> R$ ${(project.budget || 0).toLocaleString('pt-BR')}</p>
-          ` + footer
+        case 'completo':
+        default: {
+          autoTable(doc, {
+            startY: currentY,
+            head: [['Indicador', 'Valor']],
+            body: [
+              ['Status', context.project.status || '-'],
+              ['Tipo', context.project.type || '-'],
+              ['Progresso', `${Math.round(context.project.progress || 0)}%`],
+              ['Orcamento', formatCurrency(context.project.budget)],
+              ['Custo real', formatCurrency(context.project.actualCost)],
+              ['Tarefas', String(context.items.length)],
+              ['Riscos', String(context.risks.length)],
+              ['Membros', String(context.members.length)],
+              ['Licoes', String(context.lessons.length)],
+            ],
+            bodyStyles: { fontSize: 10 },
+            headStyles: { fillColor: [30, 64, 175] },
+          })
+
+          const finalY = (doc as any).lastAutoTable?.finalY || currentY + 140
+          autoTable(doc, {
+            startY: finalY + 20,
+            head: [['Top 10 tarefas', 'Status', 'Responsavel', 'Progresso']],
+            body: context.items.slice(0, 10).map((item) => [
+              item.task || '-',
+              item.status || '-',
+              item.responsible || '-',
+              `${itemProgress(item)}%`,
+            ]),
+            bodyStyles: { fontSize: 9 },
+            headStyles: { fillColor: [55, 65, 81] },
+          })
+          break
+        }
       }
 
-      // Criar e baixar arquivo HTML (que pode ser aberto e impresso como PDF)
-      const blob = new Blob([htmlContent], { type: 'text/html' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `relatorio_${reportId}_${projectId}.html`
-      link.click()
-      
-      toast.success('Relatório gerado! Abra o arquivo e use Ctrl+P para salvar como PDF.')
-      
+      const fileCode = context.project.code || context.project.id
+      doc.save(`relatorio_${reportId}_${fileCode}.pdf`)
+      toast.success('PDF gerado com sucesso')
     } catch (error) {
-      console.error('Erro ao gerar relatório:', error)
-      toast.error('Erro ao gerar relatório')
+      console.error('Erro ao gerar relatorio PDF:', error)
+      toast.error('Erro ao gerar relatorio em PDF')
     } finally {
       setGenerating(null)
     }
   }
 
-
-
-// ...
-
   return (
     <div className="h-full bg-gray-50 flex flex-col">
       <ProjectDetailTabs projectId={projectId} />
       <ProjectHorizontalMenu projectId={projectId} />
-      
+
       <div className="flex-1 container mx-auto p-6">
-        <ProjectPageHeader 
-          title="Relatórios do Projeto" 
-          description="Gere documentos e relatórios em formato HTML/PDF."
+        <ProjectPageHeader
+          title="Relatorios do Projeto"
+          description="Baixe documentos em PDF sempre alinhados ao contexto atual do projeto."
           projectId={projectId}
         />
+
+        <div className="mb-4 flex items-center justify-end">
+          <Button variant="outline" onClick={loadContext} disabled={loadingContext}>
+            {loadingContext ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+            Atualizar dados
+          </Button>
+        </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {reportTypes.map((report) => (
@@ -333,27 +489,28 @@ export default function RelatoriosPage() {
                   {report.title}
                 </CardTitle>
                 <CardDescription className="text-xs">{report.description}</CardDescription>
+                <p className="text-xs text-gray-500">{report.countLabel}</p>
               </CardHeader>
               <CardContent>
-                <Button 
+                <Button
                   onClick={() => generateReport(report.id)}
-                  disabled={generating === report.id}
+                  disabled={loadingContext || generating === report.id || !report.available}
                   className="w-full"
                   variant={report.available ? 'default' : 'secondary'}
                 >
                   {generating === report.id ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Gerando...</>
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Gerando...
+                    </>
                   ) : (
-                    <><Download className="w-4 h-4 mr-2" /> Gerar</>
+                    <>
+                      <Download className="w-4 h-4 mr-2" /> Baixar PDF
+                    </>
                   )}
                 </Button>
               </CardContent>
             </Card>
           ))}
-        </div>
-
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg text-sm text-blue-800">
-          <p><strong>Dica:</strong> Os relatórios são gerados em HTML. Após baixar, abra o arquivo no navegador e use <strong>Ctrl+P</strong> para salvar como PDF.</p>
         </div>
       </div>
     </div>

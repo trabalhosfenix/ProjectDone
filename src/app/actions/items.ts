@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { syncProjectProgress } from '@/lib/project-progress'
+import { isDoneStatus, normalizeTaskStatus } from '@/lib/task-status'
 
 export async function getProjectItems() {
   try {
@@ -26,13 +27,34 @@ export async function updateItemStatus(id: string, status: string) {
       return { success: false, error: 'Item não encontrado' }
     }
     
+    const normalizedStatus = normalizeTaskStatus(status)
+    const updateData: {
+      status: string
+      dateActualStart?: Date
+      dateActual?: Date | null
+    } = {
+      status: normalizedStatus,
+    }
+
+    if (normalizedStatus === 'Em andamento' && !oldItem.dateActualStart) {
+      updateData.dateActualStart = new Date()
+    }
+
+    if (isDoneStatus(normalizedStatus) && !oldItem.dateActual) {
+      updateData.dateActual = new Date()
+    }
+
+    if (!isDoneStatus(normalizedStatus) && oldItem.dateActual) {
+      updateData.dateActual = null
+    }
+
     await prisma.projectItem.update({
       where: { id },
-      data: { status },
+      data: updateData,
     });
 
     // Registrar no histórico
-    if (oldItem && oldItem.status !== status) {
+    if (oldItem && oldItem.status !== normalizedStatus) {
       await prisma.auditLog.create({
         data: {
           projectItemId: id,
@@ -40,7 +62,7 @@ export async function updateItemStatus(id: string, status: string) {
           userName: session?.user?.name || session?.user?.email || "Sistema",
           field: "Status",
           oldValue: oldItem.status,
-          newValue: status
+          newValue: normalizedStatus
         }
       });
 
@@ -52,8 +74,10 @@ export async function updateItemStatus(id: string, status: string) {
     revalidatePath("/dashboard");
     if (oldItem.projectId) {
       revalidatePath(`/dashboard/projetos/${oldItem.projectId}/kanban`)
+      revalidatePath(`/dashboard/projetos/${oldItem.projectId}/acompanhamento/kanban`)
       revalidatePath(`/dashboard/projetos/${oldItem.projectId}/monitorar`)
       revalidatePath(`/dashboard/projetos/${oldItem.projectId}/cronograma`)
+      revalidatePath(`/dashboard/projetos/${oldItem.projectId}/gantt`)
       revalidatePath(`/dashboard/projetos/${oldItem.projectId}/situacao`)
     }
     return { success: true };

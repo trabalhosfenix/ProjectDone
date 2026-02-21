@@ -67,7 +67,7 @@ export function GanttSplitView({
 
   return (
     <div className="flex h-full min-h-[620px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <aside className="flex w-[560px] shrink-0 flex-col border-r border-slate-200 bg-white">
+      <aside className="flex w-[55%] shrink-0 flex-col border-r border-slate-200 bg-white">
         <div className="grid h-[54px] grid-cols-[72px_minmax(0,1fr)_124px_84px_84px_56px_116px] items-center border-b border-slate-200 bg-slate-50 px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
           <span className="px-2">EAP</span>
           <span className="px-2">Atividade</span>

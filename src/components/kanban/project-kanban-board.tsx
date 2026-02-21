@@ -1,20 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { 
   DndContext, 
   DragOverlay, 
   closestCorners, 
+  pointerWithin,
   KeyboardSensor, 
   PointerSensor, 
   useSensor, 
   useSensors,
+  useDroppable,
+  DragOverEvent,
   DragStartEvent,
   DragEndEvent,
-  DragOverEvent
+  MeasuringStrategy,
+  type CollisionDetection
 } from '@dnd-kit/core'
 import { 
-  arrayMove, 
   SortableContext, 
   sortableKeyboardCoordinates, 
   verticalListSortingStrategy,
@@ -22,28 +25,84 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { createKanbanItem, moveKanbanItem, deleteKanbanItem } from '@/app/actions/kanban'
-import { Card, CardHeader, CardContent } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Plus, X, Calendar, User } from 'lucide-react'
 import { toast } from 'sonner'
+import { KANBAN_STATUS, normalizeTaskStatus } from '@/lib/task-status'
 
 type KanbanItem = {
   id: string
   task: string
+  scenario?: string | null
+  originSheet?: string | null
   status: string
   responsible: string | null
   priority: string | null
-  dateActualEnd: Date | null
+  datePlanned: string | Date | null
+  datePlannedEnd: string | Date | null
+  dateActualStart: string | Date | null
+  dateActual: string | Date | null
+  metadata?: Record<string, unknown> | null
 }
 
-const COLUMNS = [
-  { id: 'A iniciar', title: 'A iniciar', color: 'bg-gray-100' },
-  { id: 'Em andamento', title: 'Em andamento', color: 'bg-blue-50' },
-  { id: 'Em espera', title: 'Em espera', color: 'bg-yellow-50' },
-  { id: 'Concluído', title: 'Concluído', color: 'bg-green-50' }
-]
+const COLUMNS = KANBAN_STATUS.map((status) => ({
+  id: status,
+  title: status,
+  color:
+    status === 'Concluído'
+      ? 'bg-green-50'
+      : status === 'Em andamento'
+        ? 'bg-blue-50'
+        : status === 'Em espera'
+          ? 'bg-yellow-50'
+          : 'bg-gray-100',
+}))
+
+function toDateInputValue(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
+
+function parseDate(value: string | Date | null | undefined): Date | null {
+  if (!value) return null
+  const parsed = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function normalizeTaskTitle(value?: string | null) {
+  const title = String(value || '').trim()
+  return title || 'Tarefa sem titulo'
+}
+
+function normalizeOriginLabel(value?: string | null) {
+  const key = String(value || '').trim().toUpperCase()
+  if (!key) return 'Manual'
+  if (key === 'KANBAN') return 'Manual'
+  if (key === 'CRONOGRAMA_IMPORT') return 'Importado'
+  if (key === 'MANUAL') return 'Manual'
+  return key
+}
+
+function KanbanDroppableColumn({
+  id,
+  children,
+}: {
+  id: string
+  children: ReactNode
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex-1 overflow-y-auto p-3 space-y-3 transition-colors ${isOver ? 'bg-blue-50/40' : ''}`}
+    >
+      {children}
+    </div>
+  )
+}
 
 function SortableItem({ item, onDelete }: { item: KanbanItem, onDelete: (id: string) => void }) {
   const {
@@ -63,7 +122,7 @@ function SortableItem({ item, onDelete }: { item: KanbanItem, onDelete: (id: str
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="touch-none select-none">
-       <Card className="mb-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow">
+       <Card className="group relative mb-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow">
           <CardContent className="p-3">
              <div className="flex justify-between items-start mb-2">
                 <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-600">
@@ -74,16 +133,22 @@ function SortableItem({ item, onDelete }: { item: KanbanItem, onDelete: (id: str
                 </Badge>
              </div>
              
-             <p className="font-medium text-sm mb-3 line-clamp-3">{item.task}</p>
+             <p className="font-medium text-sm mb-1 line-clamp-3">{normalizeTaskTitle(item.task)}</p>
+             {!!item.scenario && (
+               <p className="text-xs text-gray-500 mb-2 line-clamp-2 italic">{item.scenario}</p>
+             )}
              
              <div className="flex justify-between items-center text-xs text-gray-500 border-t pt-2 mt-2">
-                 <div className="flex items-center gap-1">
+                 <div className="flex items-center gap-2">
                      <User className="w-3 h-3" />
                      {item.responsible || 'Sem resp.'}
+                     <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+                       {normalizeOriginLabel(item.originSheet)}
+                     </span>
                  </div>
                  <div className="flex items-center gap-1">
                      <Calendar className="w-3 h-3" />
-                     {item.dateActualEnd ? new Date(item.dateActualEnd).toLocaleDateString('pt-BR') : '--/--'}
+                     {parseDate(item.datePlannedEnd || item.dateActual)?.toLocaleDateString('pt-BR') || '--/--'}
                  </div>
              </div>
              
@@ -106,15 +171,32 @@ function SortableItem({ item, onDelete }: { item: KanbanItem, onDelete: (id: str
 }
 
 export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: string, initialItems: KanbanItem[] }) {
-  const [items, setItems] = useState<KanbanItem[]>(initialItems)
+  const [items, setItems] = useState<KanbanItem[]>(
+    initialItems.map((item) => ({ ...item, status: normalizeTaskStatus(item.status) }))
+  )
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [dragSnapshot, setDragSnapshot] = useState<{ id: string; status: string } | null>(null)
   const [addingColumn, setAddingColumn] = useState<string | null>(null)
   const [newTask, setNewTask] = useState('')
+  const [newScenario, setNewScenario] = useState('')
+  const [newResponsible, setNewResponsible] = useState('')
+  const [newPriority, setNewPriority] = useState('Média')
+  const [newPlannedStart, setNewPlannedStart] = useState(toDateInputValue(new Date()))
+  const [newPlannedEnd, setNewPlannedEnd] = useState('')
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
+
+  function resetNewCardForm() {
+    setNewTask('')
+    setNewScenario('')
+    setNewResponsible('')
+    setNewPriority('Média')
+    setNewPlannedStart(toDateInputValue(new Date()))
+    setNewPlannedEnd('')
+  }
 
   async function handleAddItem(status: string) {
       if (!newTask.trim()) return
@@ -122,20 +204,38 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
       const tempId = Math.random().toString(36).substr(2, 9)
       const newItem: KanbanItem = {
           id: tempId,
-          task: newTask,
-          status,
-          responsible: null,
-          priority: 'Média',
-          dateActualEnd: null
+          task: normalizeTaskTitle(newTask),
+          scenario: newScenario || null,
+          originSheet: 'KANBAN',
+          status: normalizeTaskStatus(status),
+          responsible: newResponsible || null,
+          priority: newPriority || 'Média',
+          datePlanned: newPlannedStart || null,
+          datePlannedEnd: newPlannedEnd || null,
+          dateActualStart: null,
+          dateActual: null,
+          metadata: {
+            needsScheduling: !newPlannedStart || !newPlannedEnd,
+            createdFrom: 'KANBAN',
+          },
       }
       
       setItems([...items, newItem])
-      setNewTask('')
+      resetNewCardForm()
       setAddingColumn(null)
 
-      const result = await createKanbanItem(projectId, newTask, status)
+      const result = await createKanbanItem({
+        projectId,
+        task: normalizeTaskTitle(newTask),
+        scenario: newScenario || undefined,
+        status,
+        responsible: newResponsible || undefined,
+        priority: newPriority,
+        datePlanned: newPlannedStart || null,
+        datePlannedEnd: newPlannedEnd || null,
+      })
       if (result.success && result.data) {
-          setItems(prev => prev.map(i => i.id === tempId ? { ...result.data, dateActualEnd: result.data.dateActualEnd ? new Date(result.data.dateActualEnd) : null } as KanbanItem : i))
+          setItems(prev => prev.map(i => i.id === tempId ? { ...result.data, status: normalizeTaskStatus(result.data.status) } as KanbanItem : i))
           toast.success("Card criado")
       } else {
           setItems(prev => prev.filter(i => i.id !== tempId))
@@ -154,21 +254,59 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
   }
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveId(event.active.id as string)
+    const draggingId = String(event.active.id)
+    const activeItem = items.find((item) => item.id === draggingId)
+    setActiveId(draggingId)
+    setDragSnapshot(activeItem ? { id: draggingId, status: activeItem.status } : null)
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event
+    if (!over) return
+
+    const draggingId = String(active.id)
+    const activeItem = items.find((item) => item.id === draggingId)
+    if (!activeItem) return
+
+    const overId = String(over.id)
+    let targetStatus = activeItem.status
+
+    if (COLUMNS.some((column) => column.id === overId)) {
+      targetStatus = overId
+    } else {
+      const overItem = items.find((item) => item.id === overId)
+      if (overItem) targetStatus = overItem.status
+    }
+
+    const normalizedTarget = normalizeTaskStatus(targetStatus)
+    if (normalizedTarget === activeItem.status) return
+
+    setItems((previous) => previous.map((item) => (item.id === draggingId ? { ...item, status: normalizedTarget } : item)))
   }
 
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     setActiveId(null)
+    
+    if (!over) {
+      if (dragSnapshot) {
+        setItems((previous) =>
+          previous.map((item) => (item.id === dragSnapshot.id ? { ...item, status: dragSnapshot.status } : item))
+        )
+      }
+      setDragSnapshot(null)
+      return
+    }
 
-    if (!over) return
-
-    const activeId = active.id as string
-    const overId = over.id as string // Pode ser item ID ou column ID
+    const activeId = String(active.id)
+    const overId = String(over.id) // Pode ser item ID ou column ID
 
     // Encontrar item e novo status
     const activeItem = items.find(i => i.id === activeId)
-    if (!activeItem) return
+    if (!activeItem) {
+      setDragSnapshot(null)
+      return
+    }
 
     // Se soltou em uma coluna vazia (overId é o status)
     let newStatus = activeItem.status
@@ -180,28 +318,38 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
         if (overItem) newStatus = overItem.status
     }
 
-    if (activeItem.status !== newStatus) {
-        // Mudou de coluna
-        const newItems = items.map(i => i.id === activeId ? { ...i, status: newStatus } : i)
-        setItems(newItems)
-        
-        await moveKanbanItem(activeId, projectId, newStatus)
+    const normalizedNextStatus = normalizeTaskStatus(newStatus)
+    const previousStatus = dragSnapshot?.id === activeId ? dragSnapshot.status : activeItem.status
+
+    if (previousStatus !== normalizedNextStatus) {
+        const result = await moveKanbanItem(activeId, projectId, normalizedNextStatus)
+        if (!result.success) {
+          setItems((previous) =>
+            previous.map((item) => (item.id === activeId ? { ...item, status: previousStatus } : item))
+          )
+          toast.error(result.error || 'Erro ao mover card')
+        }
     }
+    setDragSnapshot(null)
   }
 
-  function handleDragOver(event: DragOverEvent) {
-      // Opcional: Reordenar visualmente enquanto arrasta (sortable strategy)
-      // Para Kanban simples de status change, DragEnd resolve o status.
-      // DndKit Sortable precisa que os items estejam em containers SortableContext.
+  const collisionDetectionStrategy: CollisionDetection = (args) => {
+    const pointer = pointerWithin(args)
+    return pointer.length > 0 ? pointer : closestCorners(args)
   }
 
   return (
     <DndContext 
         sensors={sensors} 
-        collisionDetection={closestCorners} 
+        collisionDetection={collisionDetectionStrategy}
+        measuring={{
+          droppable: {
+            strategy: MeasuringStrategy.Always,
+          },
+        }}
         onDragStart={handleDragStart} 
-        onDragEnd={handleDragEnd}
         onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
     >
       <div className="flex gap-4 overflow-x-auto pb-4 h-[calc(100vh-200px)] items-start">
         {COLUMNS.map(col => {
@@ -218,7 +366,7 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
                         </Button>
                     </div>
                     
-                    <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                    <KanbanDroppableColumn id={col.id}>
                         {addingColumn === col.id && (
                             <div className="mb-3">
                                 <Input 
@@ -231,12 +379,58 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
                                         if (e.key === 'Enter') handleAddItem(col.id)
                                         if (e.key === 'Escape') {
                                             setAddingColumn(null)
-                                            setNewTask('')
+                                            resetNewCardForm()
                                         }
                                     }}
                                 />
+                                <Input
+                                  placeholder="Contexto / descrição curta"
+                                  className="mb-2 bg-white"
+                                  value={newScenario}
+                                  onChange={e => setNewScenario(e.target.value)}
+                                />
+                                <div className="grid grid-cols-2 gap-2 mb-2">
+                                  <Input
+                                    placeholder="Responsável"
+                                    className="bg-white"
+                                    value={newResponsible}
+                                    onChange={e => setNewResponsible(e.target.value)}
+                                  />
+                                  <select
+                                    className="h-9 rounded-md border border-input bg-white px-3 text-sm"
+                                    value={newPriority}
+                                    onChange={(e) => setNewPriority(e.target.value)}
+                                  >
+                                    <option value="Baixa">Baixa</option>
+                                    <option value="Média">Média</option>
+                                    <option value="Alta">Alta</option>
+                                  </select>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 mb-2">
+                                  <Input
+                                    type="date"
+                                    className="bg-white"
+                                    value={newPlannedStart}
+                                    onChange={e => setNewPlannedStart(e.target.value)}
+                                  />
+                                  <Input
+                                    type="date"
+                                    className="bg-white"
+                                    value={newPlannedEnd}
+                                    onChange={e => setNewPlannedEnd(e.target.value)}
+                                  />
+                                </div>
                                 <div className="flex gap-2 justify-end">
-                                    <Button variant="ghost" size="sm" onClick={() => setAddingColumn(null)}>Cancelar</Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setAddingColumn(null)
+                                        resetNewCardForm()
+                                      }}
+                                    >
+                                      Cancelar
+                                    </Button>
                                     <Button size="sm" onClick={() => handleAddItem(col.id)}>Adicionar</Button>
                                 </div>
                             </div>
@@ -251,14 +445,9 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
                         {colItems.length === 0 && !addingColumn && (
                             <div className="h-20 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-sm italic">
                                 Arraste itens aqui
-                                {/* Droppable area placeholder */}
                             </div>
                         )}
-                        {/* Area vazia da coluna tbm deve ser droppable */}
-                        <SortableContext items={[]} id={col.id} strategy={verticalListSortingStrategy}>
-                             <div className="flex-grow min-h-[10px]" /> 
-                        </SortableContext>
-                    </div>
+                    </KanbanDroppableColumn>
                 </div>
             )
         })}
@@ -268,7 +457,7 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
         {activeId ? (
             <Card className="w-[280px] shadow-xl opacity-90 cursor-grabbing bg-white rotate-2 transform">
                 <CardContent className="p-3">
-                     <p className="font-medium text-sm">{items.find(i => i.id === activeId)?.task}</p>
+                     <p className="font-medium text-sm">{normalizeTaskTitle(items.find(i => i.id === activeId)?.task)}</p>
                 </CardContent>
             </Card>
         ) : null}

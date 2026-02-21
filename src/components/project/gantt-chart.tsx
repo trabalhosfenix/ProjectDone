@@ -10,6 +10,9 @@ interface GanttTask {
   end: string
   progress: number
   dependencies?: string
+  wbs?: string
+  responsible?: string
+  statusLabel?: string
 }
 
 interface GanttChartProps {
@@ -50,6 +53,21 @@ export function GanttChart({
   }
 
   const isValidDate = (value: string) => !Number.isNaN(new Date(value).getTime())
+  const formatDateBR = (value: Date) => value.toLocaleDateString('pt-BR')
+
+  const getDurationDays = (start: Date, end: Date) => {
+    const dayMs = 24 * 60 * 60 * 1000
+    const diff = Math.round((end.getTime() - start.getTime()) / dayMs) + 1
+    return Math.max(1, diff)
+  }
+
+  const escapeHtml = (value: unknown) =>
+    String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
 
   const formattedTasks = useMemo(
     () =>
@@ -62,6 +80,9 @@ export function GanttChart({
           end: task.end,
           progress: task.progress || 0,
           dependencies: normalizeDependencies(task.dependencies),
+          wbs: task.wbs || '',
+          responsible: task.responsible || '',
+          statusLabel: task.statusLabel || '',
         })),
     [tasks]
   )
@@ -88,11 +109,8 @@ export function GanttChart({
 
     if (formattedTasks.length === 0) return
 
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    containerRef.current.appendChild(svg)
-
     try {
-      ganttRef.current = new Gantt(svg, formattedTasks, {
+      ganttRef.current = new Gantt(containerRef.current, formattedTasks, {
         bar_height: barHeight,
         padding,
         column_width: columnWidth,
@@ -107,13 +125,17 @@ export function GanttChart({
         on_progress_change: (task: any, progress: number) => onProgressChange?.(task, progress),
         custom_popup_html: (task: any) => `
           <div class="gantt-popup bg-white shadow-lg rounded-lg p-3 border">
-            <h5 class="font-semibold text-gray-900">${task.name}</h5>
-            <p class="text-sm text-gray-600 mt-1">
-              ${new Date(task._start).toLocaleDateString('pt-BR')} - ${new Date(task._end).toLocaleDateString('pt-BR')}
-            </p>
-            <p class="text-sm mt-1">
-              <span class="font-medium">Progresso:</span> ${task.progress}%
-            </p>
+            <h5 class="font-semibold text-gray-900">${escapeHtml(task.name)}</h5>
+            <div class="text-xs text-gray-700 mt-2 space-y-1">
+              <p><strong>EAP:</strong> ${escapeHtml(task.wbs || '-')}</p>
+              <p><strong>Responsável:</strong> ${escapeHtml(task.responsible || '-')}</p>
+              <p><strong>Status:</strong> ${escapeHtml(task.statusLabel || '-')}</p>
+              <p><strong>Período:</strong> ${formatDateBR(new Date(task._start))} - ${formatDateBR(new Date(task._end))}</p>
+              <p><strong>Duração:</strong> ${getDurationDays(new Date(task._start), new Date(task._end))} dia(s)</p>
+              <p><strong>Progresso:</strong> ${Math.round(Number(task.progress || 0))}%</p>
+              <p><strong>Dependências:</strong> ${escapeHtml(task.dependencies || '-')}</p>
+            </div>
+            <p class="text-[11px] text-gray-500 mt-2">Arraste a barra para alterar datas</p>
           </div>
         `,
       })
@@ -139,7 +161,20 @@ export function GanttChart({
   }, [viewMode])
 
   const startDragToScroll = (event: MouseEvent<HTMLDivElement>) => {
-    if (!scrollRef.current || event.button !== 0) return
+    if (!scrollRef.current) return
+
+    const target = event.target as HTMLElement
+    const isGanttInteractiveTarget = Boolean(
+      target.closest('.bar-wrapper') ||
+      target.closest('.handle') ||
+      target.closest('.popup-wrapper') ||
+      target.closest('.arrow')
+    )
+
+    // Mantém o clique esquerdo livre para drag/resize das barras do Gantt.
+    // Pan da área: botão do meio, ou Shift + clique esquerdo.
+    const isPanGesture = event.button === 1 || (event.button === 0 && event.shiftKey)
+    if (!isPanGesture || isGanttInteractiveTarget) return
 
     dragState.current = {
       active: true,
@@ -150,6 +185,7 @@ export function GanttChart({
     }
 
     event.currentTarget.style.cursor = 'grabbing'
+    event.preventDefault()
   }
 
   const moveDragToScroll = (event: MouseEvent<HTMLDivElement>) => {
@@ -214,7 +250,7 @@ export function GanttChart({
 
         .gantt-shell .gantt .grid-header,
         .gantt-shell .gantt .grid-background {
-          fill: #f8fafc;
+          fill: none;
         }
 
         .gantt-shell .gantt .grid-row {

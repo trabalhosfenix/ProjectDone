@@ -42,6 +42,9 @@ export async function getImportedProjects({
       name: item.project?.name || item.name || 'Projeto importado',
       status: item.project?.status || 'A iniciar',
       sourceFormat: item.source || 'mpp',
+      syncMode: item.syncMode,
+      syncStatus: item.syncStatus,
+      lastSyncAt: item.lastSyncAt?.toISOString(),
       importedAt: item.createdAt.toISOString(),
       createdAt: item.project?.createdAt?.toISOString(),
       totalItems: item.project?._count.items || 0,
@@ -77,6 +80,7 @@ export async function getImportedProjectDetails(projectId: string) {
     where: {
       OR: [{ id: projectId }, { projectId }],
     },
+    orderBy: { updatedAt: 'desc' },
     include: {
       project: {
         include: {
@@ -99,6 +103,9 @@ export async function getImportedProjectDetails(projectId: string) {
     id: project?.id || imported.id,
     importedProjectId: imported.id,
     externalUid: imported.externalUid,
+    syncMode: imported.syncMode,
+    syncStatus: imported.syncStatus,
+    lastSyncAt: imported.lastSyncAt?.toISOString(),
     name: project?.name || imported.name || 'Projeto importado',
     code: project?.code || '',
     importedAt: imported.createdAt.toISOString(),
@@ -133,6 +140,7 @@ export async function syncProjectWithLocal(projectId: string) {
     where: {
       OR: [{ id: projectId }, { projectId }],
     },
+    orderBy: { updatedAt: 'desc' },
     include: { project: true },
   })
 

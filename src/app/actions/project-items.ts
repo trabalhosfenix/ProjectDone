@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { syncProjectProgress } from '@/lib/project-progress'
+import { normalizeTaskStatus } from '@/lib/task-status'
 
 /**
  * Buscar todas as tarefas do projeto (sem hierarquia por enquanto)
@@ -87,6 +88,11 @@ export async function createProjectItem(data: {
     })
 
     revalidatePath(`/dashboard/projetos/${data.projectId}/monitorar`)
+    revalidatePath(`/dashboard/projetos/${data.projectId}/cronograma`)
+    revalidatePath(`/dashboard/projetos/${data.projectId}/kanban`)
+    revalidatePath(`/dashboard/projetos/${data.projectId}/acompanhamento/kanban`)
+    revalidatePath(`/dashboard/projetos/${data.projectId}/gantt`)
+    revalidatePath(`/dashboard/projetos/${data.projectId}/situacao`)
     return { success: true, data: item }
   } catch (error) {
     console.error('Erro ao criar tarefa:', error)
@@ -136,6 +142,7 @@ export async function updateProjectItem(
       where: { id },
       data: {
         ...data,
+        ...(data.status !== undefined ? { status: normalizeTaskStatus(data.status) } : {}),
         metadata: updatedMetadata
       }
     })
@@ -145,6 +152,8 @@ export async function updateProjectItem(
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/monitorar`)
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/cronograma`)
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/kanban`)
+      revalidatePath(`/dashboard/projetos/${currentItem.projectId}/acompanhamento/kanban`)
+      revalidatePath(`/dashboard/projetos/${currentItem.projectId}/gantt`)
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/situacao`)
     }
 
@@ -191,6 +200,11 @@ export async function deleteProjectItem(id: string) {
 
     if (item?.projectId) {
       revalidatePath(`/dashboard/projetos/${item.projectId}/monitorar`)
+      revalidatePath(`/dashboard/projetos/${item.projectId}/cronograma`)
+      revalidatePath(`/dashboard/projetos/${item.projectId}/kanban`)
+      revalidatePath(`/dashboard/projetos/${item.projectId}/acompanhamento/kanban`)
+      revalidatePath(`/dashboard/projetos/${item.projectId}/gantt`)
+      revalidatePath(`/dashboard/projetos/${item.projectId}/situacao`)
     }
 
     return { success: true }

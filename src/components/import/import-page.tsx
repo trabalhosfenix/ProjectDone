@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,12 @@ import { Upload, Loader2, FileCode, ArrowRight, CircleCheck, AlertTriangle } fro
 
 type ImportStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'error'
 
+function getProjectNameHintFromFile(file: File | null): string | undefined {
+  if (!file?.name) return undefined
+  const withoutExtension = file.name.replace(/\.[^/.]+$/, '')
+  const normalized = withoutExtension.replace(/\s+/g, ' ').trim()
+  return normalized || undefined
+}
 
 function extractProjectId(payload: Record<string, unknown>) {
   const direct = payload.project_id || payload.projectId
@@ -45,6 +51,10 @@ export default function ImportProjectPage() {
   const [localProjectId, setLocalProjectId] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [message, setMessage] = useState<string>('')
+  const [importMode, setImportMode] = useState<'new' | 'existing'>('new')
+  const [syncMode, setSyncMode] = useState<'append' | 'upsert' | 'replace'>('upsert')
+  const [projectOptions, setProjectOptions] = useState<Array<{ id: string; name: string; code: string | null; status: string }>>([])
+  const [selectedLocalProjectId, setSelectedLocalProjectId] = useState<string>('')
 
   const persistMppLink = (legacyProjectId: string, mppProjectId: string) => {
     try {
@@ -57,6 +67,22 @@ export default function ImportProjectPage() {
   }
 
   const canUpload = useMemo(() => selectedFile && status !== 'uploading' && status !== 'processing', [selectedFile, status])
+
+  const loadProjectOptions = async () => {
+    try {
+      const response = await fetch('/api/projects/lookup', { cache: 'no-store' })
+      const payload = await response.json()
+      if (response.ok && payload.success) {
+        setProjectOptions(Array.isArray(payload.data) ? payload.data : [])
+      }
+    } catch {
+      // noop
+    }
+  }
+
+  useEffect(() => {
+    void loadProjectOptions()
+  }, [])
 
   const handleSelectFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -102,7 +128,12 @@ export default function ImportProjectPage() {
           const syncResponse = await fetch('/api/mpp/sync-project', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mppProjectId: targetMppProjectId }),
+            body: JSON.stringify({
+              mppProjectId: targetMppProjectId,
+              localProjectId: importMode === 'existing' ? selectedLocalProjectId || undefined : undefined,
+              syncMode,
+              projectNameHint: getProjectNameHintFromFile(selectedFile),
+            }),
           })
           const syncResult = await syncResponse.json()
           if (syncResponse.ok && syncResult.success) {
@@ -137,6 +168,9 @@ export default function ImportProjectPage() {
 
       const formData = new FormData()
       formData.append('file', selectedFile)
+      if (importMode === 'existing' && selectedLocalProjectId) {
+        formData.append('projectId', selectedLocalProjectId)
+      }
 
       const response = await fetch('/api/mpp/import-mpp', {
         method: 'POST',
@@ -183,6 +217,60 @@ export default function ImportProjectPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="grid gap-2 md:grid-cols-2">
+            <label className="rounded border p-3 text-sm cursor-pointer">
+              <input
+                type="radio"
+                name="importMode"
+                className="mr-2"
+                checked={importMode === 'new'}
+                onChange={() => setImportMode('new')}
+              />
+              Criar novo projeto local
+            </label>
+            <label className="rounded border p-3 text-sm cursor-pointer">
+              <input
+                type="radio"
+                name="importMode"
+                className="mr-2"
+                checked={importMode === 'existing'}
+                onChange={() => setImportMode('existing')}
+              />
+              Importar para projeto existente
+            </label>
+          </div>
+
+          {importMode === 'existing' && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Projeto de destino</label>
+              <select
+                value={selectedLocalProjectId}
+                onChange={(e) => setSelectedLocalProjectId(e.target.value)}
+                className="w-full rounded border bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Selecione um projeto...</option>
+                {projectOptions.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name} {project.code ? `(${project.code})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Estratégia de merge</label>
+            <select
+              value={syncMode}
+              onChange={(e) => setSyncMode(e.target.value as 'append' | 'upsert' | 'replace')}
+              className="w-full rounded border bg-white px-3 py-2 text-sm"
+            >
+              <option value="upsert">Upsert (atualiza existentes e cria novas)</option>
+              <option value="append">Append (só adiciona novas)</option>
+              <option value="replace">Replace (substitui tarefas importadas da fonte)</option>
+            </select>
+          </div>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -195,7 +283,7 @@ export default function ImportProjectPage() {
             <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
               <Upload className="w-4 h-4 mr-2" /> Selecionar arquivo
             </Button>
-            <Button onClick={handleUpload} disabled={!canUpload}>
+            <Button onClick={handleUpload} disabled={!canUpload || (importMode === 'existing' && !selectedLocalProjectId)}>
               {status === 'uploading' || status === 'processing' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowRight className="w-4 h-4 mr-2" />}
               Iniciar importação
             </Button>
@@ -222,10 +310,18 @@ export default function ImportProjectPage() {
                   <Button
                     size="sm"
                     onClick={() => {
-                      const targetMppProjectId = String(projectId)
-                      const targetLocalProjectId = String(localProjectId || projectId)
+                      const targetMppProjectId = projectId ? String(projectId) : ''
+                      const targetLocalProjectId = localProjectId ? String(localProjectId) : targetMppProjectId
+                      if (!targetLocalProjectId) {
+                        toast.error('Projeto local ainda não disponível')
+                        return
+                      }
                       persistMppLink(targetLocalProjectId, targetMppProjectId)
-                      router.push(`/dashboard/projetos/${targetLocalProjectId}/gantt?mppProjectId=${targetMppProjectId}`)
+                      router.push(
+                        targetMppProjectId
+                          ? `/dashboard/projetos/${targetLocalProjectId}/gantt?mppProjectId=${targetMppProjectId}`
+                          : `/dashboard/projetos/${targetLocalProjectId}/gantt`
+                      )
                     }}
                   >
                     Abrir Gantt do projeto

@@ -81,6 +81,12 @@ export async function PATCH(
       data: dataToUpdate
     })
 
+    revalidatePath(`/dashboard/projetos/${id}/cronograma`)
+    revalidatePath(`/dashboard/projetos/${id}/gantt`)
+    revalidatePath(`/dashboard/projetos/${id}/kanban`)
+    revalidatePath(`/dashboard/projetos/${id}/acompanhamento/kanban`)
+    revalidatePath(`/dashboard/projetos/${id}/situacao`)
+
     return NextResponse.json({ success: true, data: updated })
   } catch (error) {
     console.error('Erro ao atualizar item:', error)
