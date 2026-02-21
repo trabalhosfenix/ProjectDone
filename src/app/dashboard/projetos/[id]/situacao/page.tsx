@@ -6,9 +6,7 @@ import { notFound } from 'next/navigation'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { TrendingUp, Clock, Users, AlertTriangle, ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
+import { Clock, Users, AlertTriangle } from 'lucide-react'
 
 export default async function SituacaoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -71,6 +69,12 @@ export default async function SituacaoPage({ params }: { params: Promise<{ id: s
                 <span className="font-medium">{progress}%</span>
               </div>
               <Progress value={progress} className="h-3" indicatorClassName={getProgressColor(progress)} />
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Tarefas concluídas</span>
+                <span>
+                  {project.completedTasks || 0}/{project.totalTasks || 0}
+                </span>
+              </div>
             </div>
           </CardContent>
         </Card>

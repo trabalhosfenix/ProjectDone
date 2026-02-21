@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { syncProjectProgress } from '@/lib/project-progress'
 
 export async function getProjectItems() {
   try {
@@ -20,6 +21,10 @@ export async function updateItemStatus(id: string, status: string) {
   try {
     const session = await getServerSession(authOptions);
     const oldItem = await prisma.projectItem.findUnique({ where: { id } });
+
+    if (!oldItem) {
+      return { success: false, error: 'Item não encontrado' }
+    }
     
     await prisma.projectItem.update({
       where: { id },
@@ -38,9 +43,19 @@ export async function updateItemStatus(id: string, status: string) {
           newValue: status
         }
       });
+
+      if (oldItem.projectId) {
+        await syncProjectProgress(oldItem.projectId)
+      }
     }
 
     revalidatePath("/dashboard");
+    if (oldItem.projectId) {
+      revalidatePath(`/dashboard/projetos/${oldItem.projectId}/kanban`)
+      revalidatePath(`/dashboard/projetos/${oldItem.projectId}/monitorar`)
+      revalidatePath(`/dashboard/projetos/${oldItem.projectId}/cronograma`)
+      revalidatePath(`/dashboard/projetos/${oldItem.projectId}/situacao`)
+    }
     return { success: true };
   } catch (error) {
     console.error("Error updating status:", error);
