@@ -38,6 +38,7 @@ export interface KanbanTask {
 interface KanbanBoardProps {
   initialItems: KanbanTask[]
   projectId?: string
+  allowCreate?: boolean
 }
 
 const statusMap: Record<string, BoardStatus> = {
@@ -65,7 +66,7 @@ function normalizeStatus(status: string | null): BoardStatus {
   return statusMap[status.trim().toLowerCase()] || 'A iniciar'
 }
 
-export function KanbanBoard({ initialItems }: KanbanBoardProps) {
+export function KanbanBoard({ initialItems, projectId, allowCreate = true }: KanbanBoardProps) {
   const [items, setItems] = useState<KanbanTask[]>(
     initialItems.map((item) => ({ ...item, status: normalizeStatus(item.status) }))
   )
@@ -174,7 +175,14 @@ export function KanbanBoard({ initialItems }: KanbanBoardProps) {
   }
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4 h-[calc(100vh-240px)] min-h-[500px] select-none custom-scrollbar rounded-xl p-2 items-start">
+    <div className="flex flex-col gap-3 h-[calc(100vh-240px)] min-h-[500px]">
+      {!allowCreate && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          Painel em modo visual: criação de cartões disponível no Kanban de cada projeto.
+        </div>
+      )}
+
+      <div className="flex gap-4 overflow-x-auto pb-4 select-none custom-scrollbar rounded-xl p-2 items-start h-full">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -183,7 +191,15 @@ export function KanbanBoard({ initialItems }: KanbanBoardProps) {
         onDragEnd={handleDragEnd}
       >
         {columns.map((column) => (
-          <KanbanColumn key={column.id} id={column.id} title={column.title} items={column.items} onQuickUpdate={updateCard} />
+          <KanbanColumn
+            key={column.id}
+            id={column.id}
+            title={column.title}
+            items={column.items}
+            projectId={projectId}
+            allowCreate={allowCreate}
+            onQuickUpdate={updateCard}
+          />
         ))}
 
         <DragOverlay>
@@ -194,6 +210,7 @@ export function KanbanBoard({ initialItems }: KanbanBoardProps) {
           ) : null}
         </DragOverlay>
       </DndContext>
+      </div>
     </div>
   )
 }
