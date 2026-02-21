@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
-import { Calendar, Filter, Search } from 'lucide-react'
+import { Calendar, Filter, RefreshCw, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProjectPageHeader } from "@/components/project/project-page-header"
 import { Input } from '@/components/ui/input'
@@ -76,6 +76,8 @@ export default function GanttPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [responsibleFilter, setResponsibleFilter] = useState('all')
   const [hideSummary, setHideSummary] = useState(false)
+  const [linkedMppProjectId, setLinkedMppProjectId] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     loadTasks()
@@ -321,8 +323,17 @@ export default function GanttPage() {
              description="Visualização visual do cronograma do projeto."
              projectId={projectId}
         >
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <ProjectMppContext projectId={projectId} compact onSynced={loadTasks} />
+            <button
+              onClick={handleSyncNow}
+              disabled={syncing}
+              className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              title="Sincronizar tarefas do cronograma com o projeto local"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Sincronizando...' : 'Sincronizar'}
+            </button>
             <Select value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
               <SelectTrigger className="w-[150px]">
                 <Calendar className="w-4 h-4 mr-2" />
