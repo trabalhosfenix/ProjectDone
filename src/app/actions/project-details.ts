@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { normalizeItemProgress } from '@/lib/project-progress'
 
 /**
  * Buscar projeto completo com todos os relacionamentos
@@ -467,7 +468,8 @@ export async function getProjectSituationStats(projectId: string) {
     const uniqueResponsibles = new Set<string>()
 
     let totalProgress = 0
-    let countProgress = 0
+    let totalTasks = 0
+    let completedTasks = 0
 
     items.forEach(item => {
         if (item.responsible) {
@@ -481,13 +483,12 @@ export async function getProjectSituationStats(projectId: string) {
             const d = new Date(item.dateActual)
             if (!maxEnd || d > maxEnd) maxEnd = d
         }
-        const p = (item.metadata as any)?.progress
-        if (typeof p === 'number') {
-            totalProgress += p
-            countProgress++
-        } else if (item.status === 'Concluído') {
-            totalProgress += 100
-            countProgress++
+        const itemProgress = normalizeItemProgress(item.status, item.metadata)
+        totalProgress += itemProgress
+        totalTasks++
+
+        if (itemProgress >= 100) {
+            completedTasks++
         }
     })
 
@@ -516,7 +517,7 @@ export async function getProjectSituationStats(projectId: string) {
     // Evitar duração 0 se começou hoje
     if (minStart && realDuration === 0) realDuration = 1
     
-    const calculatedProgress = countProgress > 0 ? (totalProgress / countProgress) : 0 // Já somando 100 para concluidos -> Média %
+    const calculatedProgress = totalTasks > 0 ? (totalProgress / totalTasks) : 0
     
     // 2. Contar Riscos e Issues
     const risksCount = await prisma.projectRisk.count({ where: { projectId } })
@@ -531,7 +532,9 @@ export async function getProjectSituationStats(projectId: string) {
             realDuration,
             teamCount: uniqueResponsibles.size,
             risksIssuesCount: totalRisksIssues,
-            calculatedProgress: Math.round(calculatedProgress)
+            calculatedProgress: Math.round(calculatedProgress),
+            completedTasks,
+            totalTasks
         }
     }
 
