@@ -44,7 +44,7 @@ export default async function ProjectKanbanPage({ params }: { params: Promise<{ 
           </div>
         </div>
 
-        <KanbanBoard initialItems={items} projectId={id} />
+        <KanbanBoard initialItems={items} projectId={id} allowCreate />
       </div>
     </div>
   )
