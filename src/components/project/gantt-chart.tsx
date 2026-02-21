@@ -66,6 +66,17 @@ export function GanttChart({
     [tasks]
   )
 
+  const columnWidth = useMemo(() => {
+    const widths = {
+      Day: 36,
+      Week: 48,
+      Month: 120,
+      Year: 220,
+    } as const
+
+    return widths[viewMode] ?? widths.Week
+  }, [viewMode])
+
   useEffect(() => {
     setIsClient(true)
   }, [])
@@ -78,17 +89,19 @@ export function GanttChart({
     if (formattedTasks.length === 0) return
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    svg.id = 'gantt-chart'
     containerRef.current.appendChild(svg)
 
     try {
-      ganttRef.current = new Gantt('#gantt-chart', formattedTasks, {
+      ganttRef.current = new Gantt(svg, formattedTasks, {
         bar_height: barHeight,
         padding,
+        column_width: columnWidth,
         view_mode: viewMode,
         date_format: 'YYYY-MM-DD',
         language: 'pt-br',
-        infinite_padding: true,
+        infinite_padding: false,
+        scroll_to: 'start',
+        lines: 'both',
         on_click: (task: any) => onTaskClick?.(task),
         on_date_change: (task: any, start: Date, end: Date) => onDateChange?.(task, start, end),
         on_progress_change: (task: any, progress: number) => onProgressChange?.(task, progress),
@@ -113,7 +126,7 @@ export function GanttChart({
         containerRef.current.innerHTML = ''
       }
     }
-  }, [isClient, formattedTasks, viewMode, barHeight, padding, onTaskClick, onDateChange, onProgressChange])
+  }, [isClient, formattedTasks, viewMode, barHeight, padding, columnWidth, onTaskClick, onDateChange, onProgressChange])
 
   useEffect(() => {
     if (ganttRef.current && viewMode) {
@@ -126,7 +139,7 @@ export function GanttChart({
   }, [viewMode])
 
   const startDragToScroll = (event: MouseEvent<HTMLDivElement>) => {
-    if (!scrollRef.current) return
+    if (!scrollRef.current || event.button !== 0) return
 
     dragState.current = {
       active: true,
@@ -150,6 +163,7 @@ export function GanttChart({
   }
 
   const endDragToScroll = (event: MouseEvent<HTMLDivElement>) => {
+    if (!dragState.current.active) return
     dragState.current.active = false
     event.currentTarget.style.cursor = 'grab'
   }
@@ -182,8 +196,9 @@ export function GanttChart({
         onMouseMove={moveDragToScroll}
         onMouseUp={endDragToScroll}
         onMouseLeave={endDragToScroll}
+        onMouseOut={endDragToScroll}
       >
-        <div ref={containerRef} className="min-h-[520px] min-w-[980px]" />
+        <div ref={containerRef} className="min-h-[520px] min-w-full" />
       </div>
 
       <style jsx global>{`
