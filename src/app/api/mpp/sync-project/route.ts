@@ -3,11 +3,13 @@ import { prisma } from '@/lib/prisma'
 import { getMppTasks, mppFetchRaw } from '@/lib/mpp-api'
 
 function normalizeStatus(raw?: string) {
-  const value = String(raw || '').toLowerCase()
+  const value = String(raw || '').toLowerCase().trim()
   if (!value) return 'A iniciar'
+
   if (value.includes('done') || value.includes('concl') || value.includes('completed')) return 'Concluído'
-  if (value.includes('progress') || value.includes('andamento')) return 'Andamento'
-  if (value.includes('delay') || value.includes('atras')) return 'Atraso'
+  if (value.includes('progress') || value.includes('andamento') || value.includes('doing')) return 'Em andamento'
+  if (value.includes('delay') || value.includes('atras') || value.includes('blocked') || value.includes('wait')) return 'Em espera'
+
   return 'A iniciar'
 }
 
@@ -66,6 +68,7 @@ export async function POST(request: Request) {
     })
 
     const mppTasks = await getMppTasks(mppProjectId, undefined, { tenantId, timeoutMs: 120_000 })
+    const importedExternalIds = mppTasks.map((task) => `mpp:${mppProjectId}:${task.id}`)
 
     for (const task of mppTasks) {
       const externalId = `mpp:${mppProjectId}:${task.id}`
@@ -98,11 +101,31 @@ export async function POST(request: Request) {
       })
     }
 
+    const cleanupWhere = {
+      projectId: localProject.id,
+      originSheet: 'CRONOGRAMA_IMPORT',
+      externalId: {
+        startsWith: `mpp:${mppProjectId}:`,
+        ...(importedExternalIds.length ? { notIn: importedExternalIds } : {}),
+      },
+    }
+
+    const cleanupResult = await prisma.projectItem.deleteMany({
+      where: importedExternalIds.length
+        ? cleanupWhere
+        : {
+            projectId: localProject.id,
+            originSheet: 'CRONOGRAMA_IMPORT',
+            externalId: { startsWith: `mpp:${mppProjectId}:` },
+          },
+    })
+
     return NextResponse.json({
       success: true,
       localProjectId: localProject.id,
       mppProjectId,
       importedTasks: mppTasks.length,
+      removedTasks: cleanupResult.count,
     })
   } catch (error) {
     console.error('Erro ao sincronizar projeto importado:', error)
