@@ -1,0 +1,7 @@
+import ImportProjectPage from '@/components/import/import-page'
+
+export const dynamic = 'force-dynamic'
+
+export default function Page() {
+  return <ImportProjectPage />
+}

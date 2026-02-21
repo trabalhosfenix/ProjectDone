@@ -10,8 +10,7 @@ export async function getKanbanItems(projectId: string) {
   try {
     const items = await prisma.projectItem.findMany({
       where: {
-        projectId,
-        originSheet: 'KANBAN'
+        projectId
       },
       orderBy: {
         createdAt: 'asc'
