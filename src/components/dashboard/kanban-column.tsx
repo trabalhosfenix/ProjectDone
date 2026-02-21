@@ -26,20 +26,32 @@ interface KanbanColumnProps {
   projectId?: string
   onAdd?: (title: string) => Promise<void> | void
   onCardClick?: (item: KanbanTask) => void
+  allowCreate?: boolean
   onQuickUpdate?: (
     itemId: string,
     payload: { task?: string; responsible?: string | null; priority?: string; status?: (typeof BOARD_COLUMNS)[number] }
   ) => Promise<void>
 }
 
-export function KanbanColumn({ id, title, items, projectId, onAdd, onCardClick, onQuickUpdate }: KanbanColumnProps) {
+export function KanbanColumn({ id, title, items, projectId, onAdd, onCardClick, allowCreate = true, onQuickUpdate }: KanbanColumnProps) {
   const { setNodeRef } = useDroppable({ id })
   const [isAdding, setIsAdding] = useState(false)
   const [newTask, setNewTask] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const canCreate = allowCreate && (Boolean(onAdd) || Boolean(projectId))
 
   const handleAdd = async () => {
     if (!newTask.trim()) return
+
+    if (!allowCreate) {
+      toast.info('Criação desativada nesta visualização. Use o Kanban do projeto para criar cartões.')
+      return
+    }
+
+    if (!onAdd && !projectId) {
+      toast.error('Não foi possível criar: selecione um projeto para vincular o cartão.')
+      return
+    }
     setIsSubmitting(true)
     try {
       if (onAdd) {
@@ -115,10 +127,19 @@ export function KanbanColumn({ id, title, items, projectId, onAdd, onCardClick, 
             </div>
           </div>
         ) : (
-          <Button variant="ghost" className="w-full justify-start gap-2 h-9 text-[#44546f] hover:bg-black/5 font-semibold text-sm px-2" onClick={() => setIsAdding(true)}>
-            <Plus className="w-4 h-4" />
-            Adicionar um cartão
-          </Button>
+          <div className="space-y-1">
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-2 h-9 text-[#44546f] hover:bg-black/5 font-semibold text-sm px-2 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => setIsAdding(true)}
+              disabled={!canCreate}
+              title={!canCreate ? 'Criação indisponível sem contexto de projeto' : undefined}
+            >
+              <Plus className="w-4 h-4" />
+              Adicionar um cartão
+            </Button>
+            {!canCreate && <p className="px-2 text-xs text-[#44546f]/80">Criação disponível apenas no Kanban do projeto.</p>}
+          </div>
         )}
       </div>
     </div>

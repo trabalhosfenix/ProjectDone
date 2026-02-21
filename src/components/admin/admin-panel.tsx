@@ -260,7 +260,7 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
          {activeTab === "kanban" && (
            <div className="space-y-8 h-[calc(100vh-180px)]">
              <h2 className="text-3xl font-bold tracking-tight text-left">Quadro Ágil de Entregas</h2>
-             <KanbanBoard initialItems={initialItems} statusOptions={statusOptions} />
+             <KanbanBoard initialItems={initialItems} allowCreate={false} />
            </div>
          )}
 
