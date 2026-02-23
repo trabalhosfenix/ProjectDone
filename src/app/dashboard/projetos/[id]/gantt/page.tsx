@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
-import { Calendar, Filter, Search } from 'lucide-react'
+import { Calendar, Filter, Search, Palette } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProjectPageHeader } from "@/components/project/project-page-header"
 import { Input } from '@/components/ui/input'
@@ -22,6 +22,7 @@ export default function GanttPage() {
   const [tasks, setTasks] = useState<GanttSplitTask[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'Day' | 'Week' | 'Month' | 'Year'>('Week')
+  const [ganttTheme, setGanttTheme] = useState<'light' | 'dark'>('light')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [responsibleFilter, setResponsibleFilter] = useState('all')
@@ -185,6 +186,16 @@ export default function GanttPage() {
                 <SelectItem value="Year">Ano</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={ganttTheme} onValueChange={(v: 'light' | 'dark') => setGanttTheme(v)}>
+              <SelectTrigger className="w-[150px]">
+                <Palette className="w-4 h-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">Tema Claro</SelectItem>
+                <SelectItem value="dark">Tema Escuro</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </ProjectPageHeader>
 
@@ -262,6 +273,7 @@ export default function GanttPage() {
               <GanttSplitView
                 tasks={visibleTasks}
                 viewMode={viewMode}
+                theme={ganttTheme}
                 onTaskClick={handleTaskClick}
                 onDateChange={handleDateChange}
                 onProgressChange={handleProgressChange}

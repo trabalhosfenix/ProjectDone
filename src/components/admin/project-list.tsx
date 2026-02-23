@@ -619,25 +619,25 @@ export function ProjectList() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-center">
         <div>
           <h2 className="text-2xl font-bold">Gestão de Projetos</h2>
           <p className="text-gray-600 text-sm mt-1">
             Gerencie projetos locais e importados
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
           <Button
             onClick={() => window.location.href = '/dashboard/import'}
             variant="outline"
-            className="flex items-center gap-2"
+            className="flex items-center justify-center gap-2 w-full md:w-auto"
           >
             <Database className="w-4 h-4" />
             Importar MPP
           </Button>
           <Button
             onClick={handleNew}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
+            className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white w-full md:w-auto"
           >
             <Plus className="w-4 h-4" />
             Novo Projeto Local
@@ -665,7 +665,7 @@ export function ProjectList() {
         <TabsContent value={activeTab} className="mt-6">
           {/* Filtros (compartilhados) */}
           <div className="bg-white border rounded-lg p-4 mb-6">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className="flex items-center gap-2 text-gray-700 font-semibold"
@@ -741,7 +741,8 @@ export function ProjectList() {
 
           {/* Tabela */}
           <div className="bg-white border rounded-lg overflow-hidden">
-            <table className="w-full">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px]">
               <thead className="bg-gray-800 text-white">
                 <tr>
                   <th className="text-left p-4">Projeto</th>
@@ -816,7 +817,7 @@ export function ProjectList() {
                         </span>
                       </td>
                       <td className="p-4">
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center justify-center gap-2 flex-wrap">
                           <a
                             href={`/dashboard/projetos/${project.id}`}
                             className="flex items-center gap-1 text-green-600 hover:text-green-800 text-sm font-medium hover:underline"
@@ -888,10 +889,11 @@ export function ProjectList() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Rodapé com contagem */}
-          <div className="flex justify-between items-center mt-4 text-sm text-gray-500">
+          <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center mt-4 text-sm text-gray-500">
             <div>
               {displayProjects.length} projeto(s) listado(s)
               {activeTab === 'all' && (

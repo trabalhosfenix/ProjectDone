@@ -4,10 +4,13 @@ import { addDays, startOfDay } from 'date-fns'
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { isDoneStatus, normalizeTaskStatus } from '@/lib/task-status'
+import { syncProjectProgress } from '@/lib/project-progress'
+import { syncStatusAndProgress } from '@/lib/project-item-flow'
 
 type CreateKanbanItemInput = {
   projectId: string
   task: string
+  wbs?: string
   scenario?: string
   status?: string
   priority?: string
@@ -36,6 +39,7 @@ export async function getKanbanItems(projectId: string) {
       },
       select: {
         id: true,
+        wbs: true,
         task: true,
         scenario: true,
         status: true,
@@ -78,6 +82,7 @@ export async function createKanbanItem(input: CreateKanbanItemInput) {
       data: {
         projectId: input.projectId,
         task: input.task,
+        wbs: input.wbs?.trim() || null,
         scenario: input.scenario || null,
         originSheet: 'KANBAN',
         status: normalizedStatus,
@@ -88,6 +93,7 @@ export async function createKanbanItem(input: CreateKanbanItemInput) {
         metadata: {
           needsScheduling,
           createdFrom: 'KANBAN',
+          progress: isDoneStatus(normalizedStatus) ? 1 : 0,
         },
       }
     })
@@ -108,31 +114,39 @@ export async function createKanbanItem(input: CreateKanbanItemInput) {
  */
 export async function moveKanbanItem(itemId: string, projectId: string, newStatus: string) {
   try {
-    const normalizedStatus = normalizeTaskStatus(newStatus)
     const existing = await prisma.projectItem.findUnique({
       where: { id: itemId },
-      select: { dateActualStart: true, dateActual: true }
+      select: { dateActualStart: true, dateActual: true, metadata: true, status: true }
     })
 
     if (!existing) {
       return { success: false, error: 'Card não encontrado' }
     }
 
+    const flow = syncStatusAndProgress({
+      currentStatus: existing.status,
+      currentMetadata: existing.metadata,
+      patchStatus: newStatus,
+    })
+
     const updateData: {
       status: string
       dateActualStart?: Date
       dateActual?: Date | null
-    } = { status: normalizedStatus }
+      metadata: Record<string, unknown>
+    } = { status: flow.status, metadata: flow.metadata }
 
-    if (normalizedStatus === 'Em andamento' && !existing.dateActualStart) {
+    if (flow.status === 'Em andamento' && !existing.dateActualStart) {
       updateData.dateActualStart = new Date()
     }
 
-    if (isDoneStatus(normalizedStatus) && !existing.dateActual) {
-      updateData.dateActual = new Date()
+    if (flow.status === 'Concluído') {
+      if (!existing.dateActual) {
+        updateData.dateActual = new Date()
+      }
     }
 
-    if (!isDoneStatus(normalizedStatus) && existing.dateActual) {
+    if (flow.status !== 'Concluído' && existing.dateActual) {
       updateData.dateActual = null
     }
 
@@ -140,6 +154,7 @@ export async function moveKanbanItem(itemId: string, projectId: string, newStatu
       where: { id: itemId },
       data: updateData
     })
+    await syncProjectProgress(projectId)
 
     revalidatePath(`/dashboard/projetos/${projectId}/acompanhamento/kanban`)
     revalidatePath(`/dashboard/projetos/${projectId}/kanban`)

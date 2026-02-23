@@ -21,6 +21,7 @@ interface GanttChartProps {
   onDateChange?: (task: GanttTask, start: Date, end: Date) => void
   onProgressChange?: (task: GanttTask, progress: number) => void
   viewMode?: 'Day' | 'Week' | 'Month' | 'Year'
+  theme?: 'light' | 'dark'
   barHeight?: number
   padding?: number
 }
@@ -31,6 +32,7 @@ export function GanttChart({
   onDateChange,
   onProgressChange,
   viewMode = 'Week',
+  theme = 'light',
   barHeight = 20,
   padding = 18,
 }: GanttChartProps) {
@@ -224,7 +226,7 @@ export function GanttChart({
   }
 
   return (
-    <div className="gantt-shell h-full bg-white">
+    <div className={`gantt-shell h-full ${theme === 'dark' ? 'gantt-theme-dark bg-[#0f1115]' : 'bg-white'}`}>
       <div
         ref={scrollRef}
         className="gantt-container h-full overflow-auto cursor-grab"
@@ -237,7 +239,7 @@ export function GanttChart({
         <div ref={containerRef} className="min-h-[520px] min-w-full" />
       </div>
 
-      <style jsx global>{`
+      {/* <style jsx global>{`
         .gantt-shell .gantt-container {
           scrollbar-width: thin;
           scrollbar-color: #94a3b8 #e2e8f0;
@@ -287,9 +289,10 @@ export function GanttChart({
         }
 
         .gantt-shell .gantt .bar-label {
-          fill: #ffffff;
-          font-weight: 600;
-          font-size: 12px;
+              fill: #090909;
+              font-size: 12px;
+              stroke: none;
+              font-weight: 600;
         }
 
         .gantt-shell .gantt .arrow {
@@ -301,7 +304,7 @@ export function GanttChart({
           min-width: 220px;
           border-radius: 12px;
         }
-      `}</style>
+      `}</style> */}
     </div>
   )
 }

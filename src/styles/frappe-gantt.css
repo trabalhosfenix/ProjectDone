@@ -20,7 +20,8 @@
   --g-popup-actions: #ebeff2;
   --g-weekend-highlight-color: #f7f7f7;
 }
-html[data-theme="dark"] {
+html[data-theme="dark"],
+.gantt-theme-dark {
   --g-arrow-color: #e5e5e5;
   --g-bar-color: #2a2a2a;
   --g-bar-border: #3a3a3a;
@@ -299,6 +300,8 @@ html[data-theme="dark"] {
   font-family: Helvetica;
   font-size: 13px;
   font-weight: 400;
+  stroke: none; 
+
 }
 .gantt .bar-label.big {
   fill: var(--g-text-dark);

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { syncProjectProgress } from '@/lib/project-progress'
-import { isDoneStatus, normalizeTaskStatus } from '@/lib/task-status'
+import { syncStatusAndProgress } from '@/lib/project-item-flow'
 
 export async function getProjectItems() {
   try {
@@ -27,24 +27,33 @@ export async function updateItemStatus(id: string, status: string) {
       return { success: false, error: 'Item não encontrado' }
     }
     
-    const normalizedStatus = normalizeTaskStatus(status)
+    const flow = syncStatusAndProgress({
+      currentStatus: oldItem.status,
+      currentMetadata: oldItem.metadata,
+      patchStatus: status,
+    })
+
     const updateData: {
       status: string
       dateActualStart?: Date
       dateActual?: Date | null
+      metadata: Record<string, unknown>
     } = {
-      status: normalizedStatus,
+      status: flow.status,
+      metadata: flow.metadata,
     }
 
-    if (normalizedStatus === 'Em andamento' && !oldItem.dateActualStart) {
+    if (flow.status === 'Em andamento' && !oldItem.dateActualStart) {
       updateData.dateActualStart = new Date()
     }
 
-    if (isDoneStatus(normalizedStatus) && !oldItem.dateActual) {
-      updateData.dateActual = new Date()
+    if (flow.status === 'Concluído') {
+      if (!oldItem.dateActual) {
+        updateData.dateActual = new Date()
+      }
     }
 
-    if (!isDoneStatus(normalizedStatus) && oldItem.dateActual) {
+    if (flow.status !== 'Concluído' && oldItem.dateActual) {
       updateData.dateActual = null
     }
 
@@ -54,7 +63,7 @@ export async function updateItemStatus(id: string, status: string) {
     });
 
     // Registrar no histórico
-    if (oldItem && oldItem.status !== normalizedStatus) {
+    if (oldItem && oldItem.status !== flow.status) {
       await prisma.auditLog.create({
         data: {
           projectItemId: id,
@@ -62,13 +71,15 @@ export async function updateItemStatus(id: string, status: string) {
           userName: session?.user?.name || session?.user?.email || "Sistema",
           field: "Status",
           oldValue: oldItem.status,
-          newValue: normalizedStatus
+          newValue: flow.status
         }
       });
 
       if (oldItem.projectId) {
         await syncProjectProgress(oldItem.projectId)
       }
+    } else if (oldItem.projectId) {
+      await syncProjectProgress(oldItem.projectId)
     }
 
     revalidatePath("/dashboard");
@@ -186,12 +197,13 @@ export async function deleteStatusOption(id: number) {
     return { success: false, error };
   }
 }
-export async function createProjectItem(data: { task: string, status: string, originSheet: string, projectId?: string }) {
+export async function createProjectItem(data: { task: string, status: string, originSheet: string, projectId?: string, wbs?: string }) {
   try {
     const session = await getServerSession(authOptions);
     const item = await prisma.projectItem.create({
       data: {
         ...data,
+        wbs: data.wbs?.trim() || null,
         priority: "Média"
       }
     });

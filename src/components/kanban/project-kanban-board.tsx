@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { 
   DndContext, 
   DragOverlay, 
@@ -35,6 +35,7 @@ import { KANBAN_STATUS, normalizeTaskStatus } from '@/lib/task-status'
 
 type KanbanItem = {
   id: string
+  wbs?: string | null
   task: string
   scenario?: string | null
   originSheet?: string | null
@@ -134,6 +135,9 @@ function SortableItem({ item, onDelete }: { item: KanbanItem, onDelete: (id: str
              </div>
              
              <p className="font-medium text-sm mb-1 line-clamp-3">{normalizeTaskTitle(item.task)}</p>
+             {!!item.wbs && (
+               <p className="text-[11px] text-blue-700 mb-1 font-semibold">WBS: {item.wbs}</p>
+             )}
              {!!item.scenario && (
                <p className="text-xs text-gray-500 mb-2 line-clamp-2 italic">{item.scenario}</p>
              )}
@@ -179,10 +183,12 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
   const [addingColumn, setAddingColumn] = useState<string | null>(null)
   const [newTask, setNewTask] = useState('')
   const [newScenario, setNewScenario] = useState('')
+  const [newWbs, setNewWbs] = useState('')
   const [newResponsible, setNewResponsible] = useState('')
   const [newPriority, setNewPriority] = useState('Média')
   const [newPlannedStart, setNewPlannedStart] = useState(toDateInputValue(new Date()))
   const [newPlannedEnd, setNewPlannedEnd] = useState('')
+  const tempIdRef = useRef(0)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -192,6 +198,7 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
   function resetNewCardForm() {
     setNewTask('')
     setNewScenario('')
+    setNewWbs('')
     setNewResponsible('')
     setNewPriority('Média')
     setNewPlannedStart(toDateInputValue(new Date()))
@@ -201,9 +208,11 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
   async function handleAddItem(status: string) {
       if (!newTask.trim()) return
       
-      const tempId = Math.random().toString(36).substr(2, 9)
+      tempIdRef.current += 1
+      const tempId = `temp-${tempIdRef.current}`
       const newItem: KanbanItem = {
           id: tempId,
+          wbs: newWbs.trim() || null,
           task: normalizeTaskTitle(newTask),
           scenario: newScenario || null,
           originSheet: 'KANBAN',
@@ -227,6 +236,7 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
       const result = await createKanbanItem({
         projectId,
         task: normalizeTaskTitle(newTask),
+        wbs: newWbs.trim() || undefined,
         scenario: newScenario || undefined,
         status,
         responsible: newResponsible || undefined,
@@ -388,6 +398,12 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
                                   className="mb-2 bg-white"
                                   value={newScenario}
                                   onChange={e => setNewScenario(e.target.value)}
+                                />
+                                <Input
+                                  placeholder="WBS (ex: 1.2.3)"
+                                  className="mb-2 bg-white"
+                                  value={newWbs}
+                                  onChange={e => setNewWbs(e.target.value)}
                                 />
                                 <div className="grid grid-cols-2 gap-2 mb-2">
                                   <Input

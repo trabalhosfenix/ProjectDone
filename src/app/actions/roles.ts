@@ -2,10 +2,22 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+
+async function isAdminSession() {
+  const session = await getServerSession(authOptions)
+  return (session?.user as { role?: string } | undefined)?.role === 'ADMIN'
+}
 
 // Listar todos os perfis (roles)
 export async function getRoles() {
   try {
+    const isAdmin = await isAdminSession()
+    if (!isAdmin) {
+      return { success: false, error: 'Acesso negado' }
+    }
+
     const roles = await prisma.role.findMany({
       orderBy: { name: 'asc' },
       include: {
@@ -24,6 +36,11 @@ export async function getRoles() {
 // Criar novo perfil
 export async function createRole(data: { name: string, permissions: Record<string, boolean> }) {
   try {
+    const isAdmin = await isAdminSession()
+    if (!isAdmin) {
+      return { success: false, error: 'Acesso negado' }
+    }
+
     const role = await prisma.role.create({
       data: {
         name: data.name,
@@ -32,9 +49,10 @@ export async function createRole(data: { name: string, permissions: Record<strin
     })
     revalidatePath('/dashboard/sistema/perfis')
     return { success: true, data: role, message: 'Perfil criado com sucesso!' }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Erro ao criar perfil:', error)
-    if (error.code === 'P2002') {
+    const code = (error as { code?: string } | null)?.code
+    if (code === 'P2002') {
       return { success: false, error: 'Já existe um perfil com este nome' }
     }
     return { success: false, error: 'Falha ao criar perfil' }
@@ -44,6 +62,11 @@ export async function createRole(data: { name: string, permissions: Record<strin
 // Atualizar perfil
 export async function updateRole(id: string, data: { name?: string, permissions?: Record<string, boolean> }) {
   try {
+    const isAdmin = await isAdminSession()
+    if (!isAdmin) {
+      return { success: false, error: 'Acesso negado' }
+    }
+
     const role = await prisma.role.update({
       where: { id },
       data
@@ -59,6 +82,11 @@ export async function updateRole(id: string, data: { name?: string, permissions?
 // Deletar perfil
 export async function deleteRole(id: string) {
   try {
+    const isAdmin = await isAdminSession()
+    if (!isAdmin) {
+      return { success: false, error: 'Acesso negado' }
+    }
+
     // Verificar se tem usuários com este perfil
     const role = await prisma.role.findUnique({
       where: { id },
@@ -81,6 +109,11 @@ export async function deleteRole(id: string) {
 // Atribuir perfil a usuário
 export async function assignRoleToUser(userId: string, roleId: string | null) {
   try {
+    const isAdmin = await isAdminSession()
+    if (!isAdmin) {
+      return { success: false, error: 'Acesso negado' }
+    }
+
     await prisma.user.update({
       where: { id: userId },
       data: { roleId }
