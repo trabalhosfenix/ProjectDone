@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/prisma"; // Import singleton
 import * as XLSX from "xlsx";
+import { AccessError, requireAuth } from "@/lib/access-control";
 
 // Helper to parse Excel dates (which are serial numbers)
 function parseExcelDate(val: any): Date | null {
@@ -40,6 +41,7 @@ function parseExcelDate(val: any): Date | null {
 export async function POST(req: NextRequest) {
   console.log("API /api/upload hit"); // LOG 1
   try {
+    const currentUser = await requireAuth()
     const formData = await req.formData();
     const file = formData.get("file") as File;
     console.log("File received:", file ? file.name : "null"); // LOG 2
@@ -100,6 +102,7 @@ export async function POST(req: NextRequest) {
                const normalizedExternalId = String(externalId)
                const existing = await prisma.projectItem.findFirst({
                  where: {
+                   ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
                    projectId: null,
                    externalId: normalizedExternalId,
                  },
@@ -129,6 +132,7 @@ export async function POST(req: NextRequest) {
                } else {
                  await prisma.projectItem.create({
                    data: {
+                     tenantId: currentUser.tenantId || undefined,
                      externalId: normalizedExternalId,
                      ...data,
                    },
@@ -149,6 +153,9 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
+    if (error instanceof AccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error("Upload error CRITICAL:", error);
     return NextResponse.json({ error: "Failed to process file: " + error.message }, { status: 500 });
   }

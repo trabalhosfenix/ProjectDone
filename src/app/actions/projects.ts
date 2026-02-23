@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { buildProjectScope, requireAuth, requireProjectAccess } from "@/lib/access-control";
 
 // Tipos
 export type ProjectFilters = {
@@ -16,14 +17,20 @@ export type ProjectFilters = {
 // Listar projetos com filtros
 export async function getProjects(filters?: ProjectFilters) {
   try {
+    const currentUser = await requireAuth();
     const where: any = {};
+    const scope = buildProjectScope(currentUser);
+    Object.assign(where, scope);
 
     if (filters?.search) {
-      where.OR = [
-        { name: { contains: filters.search, mode: "insensitive" } },
-        { description: { contains: filters.search, mode: "insensitive" } },
-        { code: { contains: filters.search, mode: "insensitive" } },
-      ];
+      const searchClause = {
+        OR: [
+          { name: { contains: filters.search, mode: "insensitive" } },
+          { description: { contains: filters.search, mode: "insensitive" } },
+          { code: { contains: filters.search, mode: "insensitive" } },
+        ],
+      };
+      where.AND = [...(where.AND || []), searchClause];
     }
 
     if (filters?.status && filters.status.length > 0) {
@@ -80,8 +87,10 @@ export async function getProjects(filters?: ProjectFilters) {
 // Buscar projeto por ID
 export async function getProjectById(id: string) {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id },
+    const currentUser = await requireAuth();
+    const scope = buildProjectScope(currentUser);
+    const project = await prisma.project.findFirst({
+      where: { id, ...scope },
       include: {
         items: {
           orderBy: { createdAt: "desc" },
@@ -124,9 +133,12 @@ export async function createProject(data: {
   priority?: string;
 }) {
   try {
+    const currentUser = await requireAuth();
     const project = await prisma.project.create({
       data: {
         ...data,
+        tenantId: currentUser.tenantId || undefined,
+        createdById: currentUser.id,
         code: data.code || `PRJ-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
         status: data.status || "A iniciar",
         priority: data.priority || "Média",
@@ -178,6 +190,7 @@ export async function updateProject(
   }>
 ) {
   try {
+    await requireProjectAccess(id);
     const project = await prisma.project.update({
       where: { id },
       data,
@@ -203,6 +216,7 @@ export async function updateProject(
 // Deletar projeto
 export async function deleteProject(id: string) {
   try {
+    await requireProjectAccess(id);
     // Verificar se tem tarefas associadas
     const project = await prisma.project.findUnique({
       where: { id },
@@ -239,7 +253,10 @@ export async function deleteProject(id: string) {
 // Obter opções únicas para filtros
 export async function getProjectFilterOptions() {
   try {
+    const currentUser = await requireAuth();
+    const where = buildProjectScope(currentUser);
     const projects = await prisma.project.findMany({
+      where,
       select: {
         status: true,
         area: true,
@@ -274,8 +291,11 @@ export async function getProjectFilterOptions() {
 // Estatísticas de projetos
 export async function getProjectStats() {
   try {
-    const total = await prisma.project.count();
+    const currentUser = await requireAuth();
+    const where = buildProjectScope(currentUser);
+    const total = await prisma.project.count({ where });
     const byStatus = await prisma.project.groupBy({
+      where,
       by: ["status"],
       _count: true,
     });

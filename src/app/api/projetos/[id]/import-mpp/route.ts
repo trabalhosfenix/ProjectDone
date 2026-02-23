@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MPP_API_BASE_URL } from '@/lib/mpp-api'
+import { AccessError, requireProjectAccess } from '@/lib/access-control'
 
 export const maxDuration = 300
 
@@ -16,6 +17,7 @@ export async function POST(
 ) {
   try {
     const { id: legacyProjectId } = await params
+    await requireProjectAccess(legacyProjectId)
     const formData = await request.formData()
     const file = formData.get('file')
 
@@ -52,6 +54,15 @@ export async function POST(
       { status: upstreamResponse.status }
     )
   } catch (error) {
+    if (error instanceof AccessError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+        },
+        { status: error.status }
+      )
+    }
     console.error('Erro na integração de importação MPP:', error)
     return NextResponse.json(
       {

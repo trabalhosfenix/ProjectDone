@@ -3,21 +3,34 @@ import { getProjectItems, getStatusOptions } from "@/app/actions/items";
 import { getRecentActivities } from "@/app/actions/dashboard";
 import { calculateDashboardStats, calculateCurvaS } from "@/lib/dashboard-calculations";
 import { prisma } from "@/lib/prisma";
+import { buildProjectScope, requireAuth } from "@/lib/access-control";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
+  const currentUser = await requireAuth();
+  const scope = buildProjectScope(currentUser);
+
   // Parallel Fetching: 3 concurrent requests instead of 5 sequential
   const [items, recentActivities, statusOptionsData, totalRisks, openIssues] = await Promise.all([
     getProjectItems(),
     getRecentActivities(),
     getStatusOptions(),
-    prisma.projectRisk.count(),
+    prisma.projectRisk.count({
+      where: {
+        project: { is: scope },
+      },
+    }),
     prisma.issue.count({
       where: {
-        OR: [
-          { statusId: null },
-          { status: { is: { isFinal: false } } },
+        AND: [
+          { project: { is: scope } },
+          {
+            OR: [
+              { statusId: null },
+              { status: { is: { isFinal: false } } },
+            ],
+          },
         ],
       },
     })

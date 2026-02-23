@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { AccessError, requireProjectAccess } from '@/lib/access-control'
 
 export async function GET(
   _request: Request,
@@ -7,9 +8,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    const { user } = await requireProjectAccess(id)
 
-    const project = await prisma.project.findUnique({
-      where: { id },
+    const project = await prisma.project.findFirst({
+      where: {
+        id,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      },
       include: {
         items: {
           orderBy: [{ wbs: 'asc' }, { createdAt: 'asc' }],
@@ -68,6 +73,9 @@ export async function GET(
       },
     })
   } catch (error) {
+    if (error instanceof AccessError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+    }
     console.error('Erro ao carregar contexto de relatorios:', error)
     return NextResponse.json({ success: false, error: 'Falha ao carregar contexto de relatorios' }, { status: 500 })
   }

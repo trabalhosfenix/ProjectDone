@@ -2,13 +2,15 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { requireProjectAccess } from '@/lib/access-control'
 
 // ... (funções anteriores getProjectMembers, addProjectMember, removeProjectMember)
 
 export async function getProjectMembers(projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
     const members = await prisma.projectMember.findMany({
-      where: { projectId },
+      where: { projectId, ...(user.tenantId ? { tenantId: user.tenantId } : {}) },
       include: {
         user: {
           select: {
@@ -29,6 +31,7 @@ export async function getProjectMembers(projectId: string) {
 
 export async function addProjectMember(projectId: string, email: string, role: string) {
   try {
+    const { project, user: currentUser } = await requireProjectAccess(projectId)
     const user = await prisma.user.findUnique({
       where: { email }
     })
@@ -54,7 +57,8 @@ export async function addProjectMember(projectId: string, email: string, role: s
       data: {
         projectId,
         userId: user.id,
-        role
+        role,
+        tenantId: project.tenantId || currentUser.tenantId || undefined,
       }
     })
 
@@ -69,6 +73,14 @@ export async function addProjectMember(projectId: string, email: string, role: s
 
 export async function removeProjectMember(memberId: string, projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
+    const existing = await prisma.projectMember.findUnique({
+      where: { id: memberId },
+      select: { projectId: true, tenantId: true },
+    })
+    if (!existing || existing.projectId !== projectId || (user.tenantId && existing.tenantId && existing.tenantId !== user.tenantId)) {
+      return { success: false, error: 'Acesso negado ao membro' }
+    }
     await prisma.projectMember.delete({
       where: { id: memberId }
     })
@@ -83,6 +95,14 @@ export async function removeProjectMember(memberId: string, projectId: string) {
 
 export async function updateMemberAllocation(memberId: string, projectId: string, data: { effort?: number, cost?: number, revenue?: number }) {
   try {
+    const { user } = await requireProjectAccess(projectId)
+    const existing = await prisma.projectMember.findUnique({
+      where: { id: memberId },
+      select: { projectId: true, tenantId: true },
+    })
+    if (!existing || existing.projectId !== projectId || (user.tenantId && existing.tenantId && existing.tenantId !== user.tenantId)) {
+      return { success: false, error: 'Acesso negado ao membro' }
+    }
     await prisma.projectMember.update({
       where: { id: memberId },
       data: {

@@ -1,8 +1,13 @@
 import { prisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
+import { AccessError, requireAuth } from '@/lib/access-control'
 
 export async function GET() {
   try {
+    const currentUser = await requireAuth()
+    if (currentUser.role !== 'ADMIN') {
+      throw new AccessError('Apenas administradores podem semear status', 403)
+    }
     const defaultStatuses = [
       { label: "Em avaliação", color: "#6b7280", isDefault: true, isFinal: false, order: 1 }, // Cinza
       { label: "Em aberto", color: "#3b82f6", isDefault: false, isFinal: false, order: 2 },    // Azul
@@ -69,6 +74,9 @@ export async function GET() {
         data: results
     })
   } catch (error) {
+    if (error instanceof AccessError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+    }
     console.error(error)
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 })
   }

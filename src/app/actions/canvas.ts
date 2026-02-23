@@ -2,9 +2,11 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { requireAuth } from "@/lib/access-control";
 
 export async function getProjectCanvas(projectName: string) {
   try {
+    await requireAuth()
     const canvas = await (prisma as any).projectCanvas.findUnique({
       where: { projectName }
     });
@@ -17,6 +19,7 @@ export async function getProjectCanvas(projectName: string) {
 
 export async function updateProjectCanvas(projectName: string, data: any) {
   try {
+    await requireAuth()
     const canvas = await (prisma as any).projectCanvas.upsert({
       where: { projectName },
       update: data,

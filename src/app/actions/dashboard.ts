@@ -2,10 +2,21 @@
 
 import { prisma } from "@/lib/prisma";
 import { startOfDay, endOfDay, format, eachDayOfInterval, min, max, isBefore, isSameDay } from "date-fns";
+import { buildProjectScope, requireAuth } from "@/lib/access-control";
 
 export async function getDashboardStats() {
   try {
-    const items = await prisma.projectItem.findMany();
+    const currentUser = await requireAuth()
+    const isAdmin = currentUser.role === "ADMIN"
+    const projectScope = buildProjectScope(currentUser)
+    const items = await prisma.projectItem.findMany({
+      where: isAdmin
+        ? (currentUser.tenantId ? { tenantId: currentUser.tenantId } : undefined)
+        : {
+            ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
+            project: { is: projectScope },
+          },
+    });
     
     const total = items.length;
     const completedItems = items.filter((i: any) => i.status === "Keyuser - Concluído");
@@ -50,13 +61,20 @@ export async function getDashboardStats() {
 
 export async function getCurvaSData() {
   try {
+    const currentUser = await requireAuth()
+    const isAdmin = currentUser.role === "ADMIN"
+    const projectScope = buildProjectScope(currentUser)
     const items = await prisma.projectItem.findMany({
-      where: {
-        OR: [
-          { datePlanned: { not: null } },
-          { dateActual: { not: null } }
-        ]
-      },
+      where: isAdmin
+        ? {
+            ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
+            OR: [{ datePlanned: { not: null } }, { dateActual: { not: null } }],
+          }
+        : {
+            ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
+            project: { is: projectScope },
+            OR: [{ datePlanned: { not: null } }, { dateActual: { not: null } }],
+          },
       orderBy: { datePlanned: "asc" }
     });
 
@@ -96,7 +114,26 @@ export async function getCurvaSData() {
 
 export async function getRecentActivities() {
   try {
+    const currentUser = await requireAuth()
+    const isAdmin = currentUser.role === "ADMIN"
+    const projectScope = buildProjectScope(currentUser)
     return await prisma.auditLog.findMany({
+      where: isAdmin
+        ? (currentUser.tenantId
+            ? {
+                projectItem: {
+                  is: { tenantId: currentUser.tenantId },
+                },
+              }
+            : undefined)
+        : {
+            projectItem: {
+              is: {
+                ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
+                project: { is: projectScope },
+              },
+            },
+          },
       take: 10,
       orderBy: { createdAt: "desc" },
       include: {

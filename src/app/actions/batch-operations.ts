@@ -2,9 +2,11 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { requireProjectAccess } from '@/lib/access-control'
 
 export async function batchReplaceResource(projectId: string, oldName: string, newName: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
     if (!projectId || !oldName || !newName) {
       return { success: false, error: 'Parâmetros inválidos' }
     }
@@ -13,6 +15,7 @@ export async function batchReplaceResource(projectId: string, oldName: string, n
     const result = await prisma.projectItem.updateMany({
       where: {
         projectId: projectId,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
         responsible: oldName
       },
       data: {
@@ -39,8 +42,9 @@ export async function batchReplaceResource(projectId: string, oldName: string, n
 
 export async function getProjectResources(projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
     const items = await prisma.projectItem.findMany({
-      where: { projectId },
+      where: { projectId, ...(user.tenantId ? { tenantId: user.tenantId } : {}) },
       select: { responsible: true },
       distinct: ['responsible']
     })

@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import { AccessError, requireAuth } from '@/lib/access-control'
 
 export async function GET(
   request: NextRequest,
   context: any
 ) {
   try {
+      await requireAuth()
       // Tentar pegar params (com suporte a promise do Next 15)
       let filename = context?.params?.filename;
       if (context?.params && typeof context.params.then === 'function') {
@@ -52,6 +54,9 @@ export async function GET(
           }
       })
   } catch (e: any) {
+      if (e instanceof AccessError) {
+        return new NextResponse(e.message, { status: e.status })
+      }
       return new NextResponse(`Erro servidor: ${e.message}`, { status: 500 })
   }
 }

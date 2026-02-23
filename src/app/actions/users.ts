@@ -22,25 +22,44 @@ interface CreateUserInput {
   defaultCost?: string | number;
   defaultRevenue?: string | number;
   workHours?: string | number;
+  tenantId?: string;
 }
 
-async function isAdminSession() {
+type SessionUser = {
+  id?: string;
+  role?: string;
+  tenantId?: string | null;
+};
+
+async function getAdminSession() {
   const session = await getServerSession(authOptions);
-  return (session?.user as { role?: string } | undefined)?.role === "ADMIN";
+  const user = (session?.user || {}) as SessionUser;
+  return {
+    isAdmin: user.role === "ADMIN",
+    user,
+  };
 }
 
 export async function getUsers() {
   try {
-    const isAdmin = await isAdminSession();
-    if (!isAdmin) return [];
+    const session = await getAdminSession();
+    if (!session.isAdmin) return [];
 
     return await prisma.user.findMany({
+      where: session.user.tenantId ? { tenantId: session.user.tenantId } : undefined,
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
         name: true,
         email: true,
         role: true,
+        tenantId: true,
+        tenant: {
+          select: {
+            name: true,
+            slug: true,
+          },
+        },
         createdAt: true,
       },
     });
@@ -52,15 +71,15 @@ export async function getUsers() {
 
 export async function createUser(formData: CreateUserInput) {
   try {
-    const isAdmin = await isAdminSession();
-    if (!isAdmin) {
+    const session = await getAdminSession();
+    if (!session.isAdmin) {
       return { success: false, error: "Acesso negado. Apenas administradores podem criar usuários." };
     }
 
     const { 
         name, email, password, role, roleId, 
         code, organization, area, jobTitle, functionalManager, phone, notes,
-        defaultCost, defaultRevenue, workHours
+        defaultCost, defaultRevenue, workHours, tenantId
     } = formData;
 
     if (!name || !email || !password) {
@@ -75,6 +94,12 @@ export async function createUser(formData: CreateUserInput) {
     
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    if (session.user.tenantId && tenantId && tenantId !== session.user.tenantId) {
+      return { success: false, error: "Sem permissão para criar usuário em outro tenant." };
+    }
+
+    const effectiveTenantId = tenantId || session.user.tenantId || undefined;
 
     await prisma.user.create({
       data: {
@@ -94,7 +119,8 @@ export async function createUser(formData: CreateUserInput) {
         notes,
         defaultCost: parseNumericInput(defaultCost, 0),
         defaultRevenue: parseNumericInput(defaultRevenue, 0),
-        workHours: parseNumericInput(workHours, 8)
+        workHours: parseNumericInput(workHours, 8),
+        tenantId: effectiveTenantId,
       },
     });
 
@@ -112,9 +138,26 @@ export async function createUser(formData: CreateUserInput) {
 
 export async function deleteUser(id: string) {
   try {
-    const isAdmin = await isAdminSession();
-    if (!isAdmin) {
+    const session = await getAdminSession();
+    if (!session.isAdmin) {
       return { success: false, error: "Acesso negado. Apenas administradores podem remover usuários." };
+    }
+
+    if (session.user.id === id) {
+      return { success: false, error: "Não é permitido remover o próprio usuário." };
+    }
+
+    const existing = await prisma.user.findUnique({
+      where: { id },
+      select: { tenantId: true },
+    });
+
+    if (!existing) {
+      return { success: false, error: "Usuário não encontrado." };
+    }
+
+    if (session.user.tenantId && existing.tenantId && session.user.tenantId !== existing.tenantId) {
+      return { success: false, error: "Sem permissão para remover usuário de outro tenant." };
     }
 
     await prisma.user.delete({

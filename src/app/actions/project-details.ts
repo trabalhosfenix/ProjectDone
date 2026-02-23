@@ -3,14 +3,19 @@
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { normalizeItemProgress } from '@/lib/project-progress'
+import { requireProjectAccess } from '@/lib/access-control'
 
 /**
  * Buscar projeto completo com todos os relacionamentos
  */
 export async function getProjectDetails(id: string) {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id },
+    const { user } = await requireProjectAccess(id)
+    const project = await prisma.project.findFirst({
+      where: {
+        id,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      },
       include: {
         createdBy: {
           select: {
@@ -76,10 +81,15 @@ export async function getProjectDetails(id: string) {
  */
 export async function calculateProjectMetrics(projectId: string) {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
+    const { user } = await requireProjectAccess(projectId)
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      },
       include: {
         items: {
+          where: user.tenantId ? { tenantId: user.tenantId } : undefined,
           select: {
             id: true,
             status: true,
@@ -267,6 +277,7 @@ export async function createProjectRecord(data: {
   attachmentName?: string | null
 }) {
   try {
+    await requireProjectAccess(data.projectId)
     const record = await prisma.projectRecord.create({
       data,
       include: {
@@ -300,6 +311,13 @@ export async function updateProjectRecord(
   }>
 ) {
   try {
+    const current = await prisma.projectRecord.findUnique({
+      where: { id },
+      select: { projectId: true },
+    })
+    if (!current?.projectId) return { success: false, error: 'Registro não encontrado' }
+    await requireProjectAccess(current.projectId)
+
     const record = await prisma.projectRecord.update({
       where: { id },
       data,
@@ -334,6 +352,7 @@ export async function deleteProjectRecord(id: string) {
     if (!record) {
       return { success: false, error: 'Registro não encontrado' }
     }
+    await requireProjectAccess(record.projectId)
 
     await prisma.projectRecord.delete({ where: { id } })
 
@@ -350,6 +369,7 @@ export async function deleteProjectRecord(id: string) {
  */
 export async function getProjectDependencies(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
     const dependencies = await prisma.projectDependency.findMany({
       where: { projectId },
       include: {
@@ -380,6 +400,8 @@ export async function createProjectDependency(data: {
   type?: string
 }) {
   try {
+    await requireProjectAccess(data.projectId)
+    await requireProjectAccess(data.dependsOnProjectId)
     const dependency = await prisma.projectDependency.create({
       data,
       include: {
@@ -410,6 +432,7 @@ export async function deleteProjectDependency(id: string) {
     if (!dependency) {
       return { success: false, error: 'Dependência não encontrada' }
     }
+    await requireProjectAccess(dependency.projectId)
 
     await prisma.projectDependency.delete({ where: { id } })
 
@@ -426,8 +449,12 @@ export async function deleteProjectDependency(id: string) {
  */
 export async function getProjectSituationStats(projectId: string) {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
+    const { user } = await requireProjectAccess(projectId)
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      },
       select: {
           id: true,
           name: true,
@@ -449,7 +476,7 @@ export async function getProjectSituationStats(projectId: string) {
 
     // 1. Calcular Duração Real (Unindo datas dos itens) e Progresso Real (Média?)
     const items = await prisma.projectItem.findMany({
-        where: { projectId },
+        where: { projectId, ...(user.tenantId ? { tenantId: user.tenantId } : {}) },
         select: {
             dateActualStart: true,
             dateActual: true, // End Real
@@ -549,6 +576,7 @@ export async function getProjectSituationStats(projectId: string) {
  */
 export async function getProjectCriticalItems(projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
     const now = new Date()
     now.setHours(0, 0, 0, 0)
     
@@ -556,6 +584,7 @@ export async function getProjectCriticalItems(projectId: string) {
     const items = await prisma.projectItem.findMany({
       where: {
         projectId,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
         OR: [
           { isCritical: true }, // Críticas
           { 

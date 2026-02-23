@@ -1,14 +1,16 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
+import { requireProjectAccess } from '@/lib/access-control'
 
 /**
  * Buscar TODOS os itens do projeto para EAP
  */
 export async function getProjectItemsForEAP(projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
     const items = await prisma.projectItem.findMany({
-      where: { projectId },
+      where: { projectId, ...(user.tenantId ? { tenantId: user.tenantId } : {}) },
       select: {
         id: true,
         task: true,

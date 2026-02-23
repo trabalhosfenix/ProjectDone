@@ -10,6 +10,22 @@ datasource db {
   url      = env("DATABASE_URL")  // Isso ainda funciona no Prisma 7
 }
 
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  roles       Role[]
+  projects    Project[]
+  projectItems ProjectItem[]
+  projectMembers ProjectMember[]
+  importedProjects ImportedProject[]
+}
+
 model User {
   id                  String   @id @default(uuid())
   email               String   @unique
@@ -32,6 +48,8 @@ model User {
   defaultCost         Float?   @default(0) // Custo padrão por hora
   defaultRevenue      Float?   @default(0) // Receita padrão por hora
   workHours           Float?   @default(8) // Horas por dia
+  tenantId            String?
+  tenant              Tenant?  @relation(fields: [tenantId], references: [id])
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -46,6 +64,8 @@ model User {
   projectMembers      ProjectMember[]  // Projetos em que participa
   importJobs          ImportJob[]      @relation("ImportJobRequester")
   importedProjects    ImportedProject[] @relation("ImportedProjectOwner")
+
+  @@index([tenantId])
 }
 
 model Role {
@@ -53,8 +73,12 @@ model Role {
   name        String   @unique // Ex: "Gerente de Projetos", "Cliente VIP"
   permissions Json     // Estrutura: { "dashboard": true, "kanban": false, "canEdit": true, etc }
   users       User[]
+  tenantId    String?
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 // Projeto = Container que agrupa tarefas, documentos, pessoas, etc.
@@ -134,6 +158,8 @@ model Project {
   
   // Metadados flexíveis
   metadata        Json?
+  tenantId        String?
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id])
   
   // Controle
   createdAt       DateTime @default(now())
@@ -161,6 +187,9 @@ model Project {
   documents       ProjectDocument[]    // Documentos do projeto
   cutoverTasks    CutoverTask[]        // Tarefas do Plano de Cutover
   importedProjects ImportedProject[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
 
 // Riscos do Projeto
@@ -281,6 +310,8 @@ model ProjectMember {
   id        String   @id @default(uuid())
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
   
   userId    String
   user      User     @relation(fields: [userId], references: [id])
@@ -296,6 +327,7 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([projectId])
   @@index([userId])
+  @@index([tenantId])
 }
 
 // Tabela única para armazenar todos os itens (TNV, Outbound, Inbound)
@@ -309,6 +341,8 @@ model ProjectItem {
   // Relacionamento com Projeto
   projectId      String?
   project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenantId       String?
+  tenant         Tenant?  @relation(fields: [tenantId], references: [id])
   
   // Campos comuns
   scenario       String?  // Cenário
@@ -352,6 +386,8 @@ model ProjectItem {
   @@index([status])
   @@index([responsible])
   @@index([projectId])
+  @@index([tenantId])
+  @@index([tenantId, projectId])
   @@unique([projectId, externalId])
 }
 
@@ -685,6 +721,8 @@ model ImportedProject {
 
   projectId     String?
   project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  tenantId      String?
+  tenant        Tenant?  @relation(fields: [tenantId], references: [id])
 
   importedById  String?
   importedBy    User?    @relation("ImportedProjectOwner", fields: [importedById], references: [id])
@@ -699,8 +737,10 @@ model ImportedProject {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@unique([source, externalUid])
+  @@unique([tenantId, source, externalUid])
   @@index([projectId])
+  @@index([tenantId])
+  @@index([tenantId, source])
   @@index([source])
   @@index([syncStatus])
 }

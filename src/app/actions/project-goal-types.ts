@@ -2,9 +2,11 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { requireProjectAccess } from '@/lib/access-control'
 
 export async function createProjectGoalType(projectId: string, data: any) {
   try {
+    await requireProjectAccess(projectId)
     await prisma.projectGoalType.create({
       data: {
         projectId,
@@ -24,6 +26,7 @@ export async function createProjectGoalType(projectId: string, data: any) {
 
 export async function getProjectGoalTypes(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
     const types = await prisma.projectGoalType.findMany({
       where: { projectId },
       orderBy: { name: 'asc' }
@@ -37,6 +40,11 @@ export async function getProjectGoalTypes(projectId: string) {
 
 export async function deleteProjectGoalType(id: string, projectId: string) {
   try {
+    await requireProjectAccess(projectId)
+    const existing = await prisma.projectGoalType.findUnique({ where: { id }, select: { projectId: true } })
+    if (!existing || existing.projectId !== projectId) {
+      return { success: false, error: 'Acesso negado ao tipo de meta' }
+    }
     await prisma.projectGoalType.delete({
       where: { id }
     })

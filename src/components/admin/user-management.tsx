@@ -21,9 +21,10 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UserPlus, Mail, Trash2, ShieldCheck, Key } from "lucide-react";
+import { UserPlus, Mail, Trash2, Building2 } from "lucide-react";
 import { getUsers, createUser, deleteUser } from "@/app/actions/users";
-import { getRoles, assignRoleToUser } from "@/app/actions/permissions";
+import { getRoles } from "@/app/actions/permissions";
+import { getTenants } from "@/app/actions/tenants";
 import { toast } from "sonner";
 
 export default function UserManagement() {
@@ -33,7 +34,9 @@ export default function UserManagement() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("USER");
   const [roleId, setRoleId] = useState<string>("");
+  const [tenantId, setTenantId] = useState<string>("none");
   const [availableRoles, setAvailableRoles] = useState<any[]>([]);
+  const [availableTenants, setAvailableTenants] = useState<any[]>([]);
   const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
@@ -45,15 +48,21 @@ export default function UserManagement() {
     setUsers(data);
     const rolesData = await getRoles();
     setAvailableRoles(rolesData);
+    const tenantsData = await getTenants();
+    setAvailableTenants(tenantsData);
   }
 
   async function handleCreateUser() {
     if (!name || !email || !password) return toast.error("Preencha todos os campos.");
     setIsPending(true);
-    const res = await createUser({ name, email, password, role, roleId: roleId || undefined });
+    const selectedTenantId = tenantId && tenantId !== "none" ? tenantId : undefined;
+    const res = await createUser({ name, email, password, role, roleId: roleId || undefined, tenantId: selectedTenantId });
     if (res.success) {
       toast.success("Funcionário cadastrado!");
       setName(""); setEmail(""); setPassword("");
+      setRole("USER");
+      setRoleId("");
+      setTenantId("none");
       fetchUsers();
     } else {
       toast.error(res.error as string);
@@ -98,6 +107,18 @@ export default function UserManagement() {
                 <Input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="email@empresa.com" />
               </div>
               <div className="grid gap-2 text-left">
+                <Label>Tipo de Acesso</Label>
+                <Select value={role} onValueChange={setRole}>
+                  <SelectTrigger className="h-11 font-bold">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="USER">Usuário</SelectItem>
+                    <SelectItem value="ADMIN">Administrador</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2 text-left">
                 <Label>Nível de Acesso Customizado</Label>
                 <Select value={roleId} onValueChange={setRoleId}>
                   <SelectTrigger className="h-11 font-bold">
@@ -107,6 +128,22 @@ export default function UserManagement() {
                     <SelectItem value="none">Padrão do Sistema</SelectItem>
                     {availableRoles.map(r => (
                         <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2 text-left">
+                <Label>Conta</Label>
+                <Select value={tenantId} onValueChange={setTenantId}>
+                  <SelectTrigger className="h-11 font-bold">
+                    <SelectValue placeholder="Selecionar conta..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Padrão do administrador</SelectItem>
+                    {availableTenants.map((tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.id}>
+                        {tenant.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -131,6 +168,7 @@ export default function UserManagement() {
                 <TableHead>Funcionário</TableHead>
                 <TableHead>E-mail</TableHead>
                 <TableHead>Nível</TableHead>
+                <TableHead>Conta</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -149,6 +187,12 @@ export default function UserManagement() {
                     }`}>
                       {user.role}
                     </span>
+                  </TableCell>
+                  <TableCell className="text-left">
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <Building2 className="w-3 h-3" />
+                      <span>{user.tenant?.name || "Sem conta"}</span>
+                    </div>
                   </TableCell>
                   <TableCell className="text-right space-x-2">
                     <Button onClick={() => handleDelete(user.id)} variant="ghost" size="icon" className="text-red-500 hover:text-red-600">

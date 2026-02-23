@@ -3,6 +3,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { requireProjectAccess } from '@/lib/access-control'
 
 function classifyRisk(probability: number, impact: number) {
   const severity = probability * impact
@@ -15,6 +16,7 @@ function classifyRisk(probability: number, impact: number) {
 
 export async function getProjectRisks(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
     const risks = await prisma.projectRisk.findMany({
       where: { projectId },
       orderBy: { severity: 'desc' },
@@ -28,6 +30,7 @@ export async function getProjectRisks(projectId: string) {
 
 export async function getProjectRiskDashboard(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
     const risks = await prisma.projectRisk.findMany({ where: { projectId } })
 
     const byLevel = { Crítico: 0, Alto: 0, Médio: 0, Baixo: 0 }
@@ -56,6 +59,7 @@ export async function getProjectRiskDashboard(projectId: string) {
 
 export async function createProjectRisk(projectId: string, data: any) {
   try {
+    await requireProjectAccess(projectId)
     const probability = parseInt(data.probability) || 1
     const impact = parseInt(data.impact) || 1
     const classified = classifyRisk(probability, impact)
@@ -89,6 +93,11 @@ export async function createProjectRisk(projectId: string, data: any) {
 
 export async function deleteProjectRisk(riskId: string, projectId: string) {
   try {
+    await requireProjectAccess(projectId)
+    const existing = await prisma.projectRisk.findUnique({ where: { id: riskId }, select: { projectId: true } })
+    if (!existing || existing.projectId !== projectId) {
+      return { success: false, error: 'Acesso negado ao risco' }
+    }
     await prisma.projectRisk.delete({
       where: { id: riskId },
     })
@@ -104,6 +113,9 @@ export async function getRiskById(riskId: string) {
     const risk = await prisma.projectRisk.findUnique({
       where: { id: riskId },
     })
+    if (risk?.projectId) {
+      await requireProjectAccess(risk.projectId)
+    }
     return { success: true, data: risk }
   } catch (error) {
     return { success: false, error: 'Erro ao buscar risco' }
@@ -112,6 +124,11 @@ export async function getRiskById(riskId: string) {
 
 export async function updateProjectRisk(riskId: string, projectId: string, data: any) {
   try {
+    await requireProjectAccess(projectId)
+    const existing = await prisma.projectRisk.findUnique({ where: { id: riskId }, select: { projectId: true } })
+    if (!existing || existing.projectId !== projectId) {
+      return { success: false, error: 'Acesso negado ao risco' }
+    }
     const probability = parseInt(data.probability) || 1
     const impact = parseInt(data.impact) || 1
     const classified = classifyRisk(probability, impact)

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { MPP_API_BASE_URL } from '@/lib/mpp-api'
+import { requireProjectAccess } from '@/lib/access-control'
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -16,6 +17,7 @@ export async function importMSProject(formData: FormData) {
   try {
     const projectId = formData.get('projectId') as string
     const file = formData.get('file') as File
+    const { user } = await requireProjectAccess(projectId)
 
     if (!projectId || !file) {
       return { success: false, error: 'Projeto ou arquivo não fornecido' }
@@ -38,6 +40,7 @@ export async function importMSProject(formData: FormData) {
     const startResponse = await fetch(`${MPP_API_BASE_URL}/v1/projects/import/mpp`, {
       method: 'POST',
       body: payload,
+      headers: user.tenantId ? { 'x-tenant-id': user.tenantId } : undefined,
       cache: 'no-store',
     })
 
@@ -67,6 +70,7 @@ export async function importMSProject(formData: FormData) {
     const timeoutAt = Date.now() + 120_000
     while (Date.now() < timeoutAt) {
       const jobResponse = await fetch(`${MPP_API_BASE_URL}/v1/jobs/${jobId}`, {
+        headers: user.tenantId ? { 'x-tenant-id': user.tenantId } : undefined,
         cache: 'no-store',
       })
       const jobBody = await jobResponse.json()

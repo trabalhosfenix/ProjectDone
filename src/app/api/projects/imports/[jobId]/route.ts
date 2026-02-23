@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { AccessError, requireAuth } from '@/lib/access-control';
 
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000/v1';
 
@@ -9,21 +8,16 @@ export async function GET(
   { params }: { params: { jobId: string } }
 ) {
   try {
-    // Verificar autenticação
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: 'Não autorizado' },
-        { status: 401 }
-      );
-    }
+    const currentUser = await requireAuth()
 
     const { jobId } = params;
+    const tenantId = currentUser.tenantId || request.headers.get('x-tenant-id') || undefined
 
     // Consultar API externa
     const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
       headers: {
         'Authorization': `Bearer ${process.env.API_TOKEN}`,
+        ...(tenantId ? { 'x-tenant-id': tenantId } : {}),
       },
     });
 
@@ -41,6 +35,12 @@ export async function GET(
     });
 
   } catch (error: any) {
+    if (error instanceof AccessError) {
+      return NextResponse.json(
+        { error: error.message, status: 'error' },
+        { status: error.status }
+      )
+    }
     console.error('Erro ao verificar job:', error);
     
     return NextResponse.json(

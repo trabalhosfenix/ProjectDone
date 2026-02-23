@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
+import { requireAuth } from "@/lib/access-control"
 
 type GetImportedProjectsArgs = {
   limit?: number
@@ -14,7 +15,11 @@ export async function getImportedProjects({
   page = 1,
   status,
 }: GetImportedProjectsArgs) {
-  const where = status ? { project: { status } } : undefined
+  const currentUser = await requireAuth()
+  const where = {
+    ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
+    ...(status ? { project: { status } } : {}),
+  }
   const skip = (page - 1) * limit
 
   const [projects, total] = await Promise.all([
@@ -57,10 +62,11 @@ export async function getImportedProjects({
 }
 
 export async function getImportedTasksSummary() {
+  const currentUser = await requireAuth()
   const [totalTasks, criticalTasks, completedTasks] = await Promise.all([
-    prisma.projectItem.count({ where: { originSheet: 'CRONOGRAMA_IMPORT' } }),
-    prisma.projectItem.count({ where: { originSheet: 'CRONOGRAMA_IMPORT', isCritical: true } }),
-    prisma.projectItem.count({ where: { originSheet: 'CRONOGRAMA_IMPORT', status: { in: ['Concluído', 'completed', 'done'] } } }),
+    prisma.projectItem.count({ where: { originSheet: 'CRONOGRAMA_IMPORT', ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}) } }),
+    prisma.projectItem.count({ where: { originSheet: 'CRONOGRAMA_IMPORT', isCritical: true, ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}) } }),
+    prisma.projectItem.count({ where: { originSheet: 'CRONOGRAMA_IMPORT', status: { in: ['Concluído', 'completed', 'done'] }, ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}) } }),
   ])
 
   return {
@@ -75,9 +81,11 @@ export async function getImportedTasksSummary() {
 
 export async function getImportedProjectDetails(projectId: string) {
   if (!projectId) return null
+  const currentUser = await requireAuth()
 
   const imported = await prisma.importedProject.findFirst({
     where: {
+      ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
       OR: [{ id: projectId }, { projectId }],
     },
     orderBy: { updatedAt: 'desc' },
@@ -135,9 +143,11 @@ export async function syncProjectWithLocal(projectId: string) {
   if (!projectId) {
     return { success: false, error: "ID inválido" }
   }
+  const currentUser = await requireAuth()
 
   const imported = await prisma.importedProject.findFirst({
     where: {
+      ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
       OR: [{ id: projectId }, { projectId }],
     },
     orderBy: { updatedAt: 'desc' },

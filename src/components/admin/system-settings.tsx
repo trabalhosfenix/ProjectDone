@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { getStatusOptions, createStatusOption, deleteStatusOption } from "@/app/actions/items";
 import { RoleManagement } from "./role-management";
 import { ProjectTypesManager } from "./project-types-manager";
+import UserManagement from "./user-management";
+import { TenantManagement } from "./tenant-management";
 
 export function SystemSettings() {
   const [statusOptions, setStatusOptions] = useState<any[]>([]);
@@ -73,6 +75,20 @@ export function SystemSettings() {
             Níveis de Acesso e Permissões
         </h3>
         <RoleManagement />
+      </div>
+
+      <div className="h-px bg-gray-100 my-8" />
+
+      <div className="space-y-4">
+        <h3 className="text-lg font-black text-[#094160] uppercase tracking-wider">Usuários e Contas</h3>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+          <div>
+            <TenantManagement />
+          </div>
+          <div>
+            <UserManagement />
+          </div>
+        </div>
       </div>
 
       <div className="h-px bg-gray-100 my-8" />

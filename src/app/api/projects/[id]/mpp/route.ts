@@ -1,20 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { AccessError, requireProjectAccess } from '@/lib/access-control';
 
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000/v1';
 const API_TIMEOUT = 5 * 60 * 1000; // 5 minutos
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    // 1. Verificar autenticação
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Não autorizado' },
-        { status: 401 }
-      );
-    }
+    const { id } = await params
+    const { user } = await requireProjectAccess(id)
 
     // 2. Pegar dados do form
     const formData = await request.formData();
@@ -44,7 +40,8 @@ export async function POST(request: NextRequest) {
     const apiFormData = new FormData();
     apiFormData.append('file', file);
     if (projectId) apiFormData.append('projectId', projectId);
-    apiFormData.append('userId', session.user.id);
+    else apiFormData.append('projectId', id)
+    apiFormData.append('userId', user.id);
 
     // 5. Enviar para API externa com timeout
     const controller = new AbortController();
@@ -56,6 +53,7 @@ export async function POST(request: NextRequest) {
         body: apiFormData,
         headers: {
           'Authorization': `Bearer ${process.env.API_TOKEN}`,
+          ...(user.tenantId ? { 'x-tenant-id': user.tenantId } : {}),
         },
         signal: controller.signal,
       });
@@ -83,6 +81,12 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error: any) {
+    if (error instanceof AccessError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: error.status }
+      )
+    }
     console.error('Erro na importação MPP:', error);
     
     return NextResponse.json(
