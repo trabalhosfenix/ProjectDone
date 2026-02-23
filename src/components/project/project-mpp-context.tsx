@@ -11,6 +11,9 @@ type ProjectContextResponse = {
   importedProjectId?: string
   mppProjectId?: string
   source?: string
+  syncMode?: 'append' | 'upsert' | 'replace'
+  syncStatus?: string
+  lastSyncAt?: string
   updatedAt?: string
   error?: string
 }
@@ -24,6 +27,7 @@ interface ProjectMppContextProps {
 export function ProjectMppContext({ projectId, compact = false, onSynced }: ProjectMppContextProps) {
   const [context, setContext] = useState<ProjectContextResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [syncMode, setSyncMode] = useState<'append' | 'upsert' | 'replace'>('upsert')
 
   const loadContext = async () => {
     setIsLoading(true)
@@ -36,6 +40,9 @@ export function ProjectMppContext({ projectId, compact = false, onSynced }: Proj
 
       const payload = (await response.json()) as ProjectContextResponse
       setContext(payload)
+      if (payload.syncMode === 'append' || payload.syncMode === 'replace' || payload.syncMode === 'upsert') {
+        setSyncMode(payload.syncMode)
+      }
     } catch (error) {
       setContext({
         success: false,
@@ -71,13 +78,25 @@ export function ProjectMppContext({ projectId, compact = false, onSynced }: Proj
       <Badge variant="secondary">MPP vinculado</Badge>
       {context.mppProjectId && <Badge variant="outline">MPP: {context.mppProjectId.slice(0, 8)}...</Badge>}
       {context.source && <Badge variant="outline">Fonte: {context.source}</Badge>}
-      {context.updatedAt && (
+      {context.syncStatus && <Badge variant="outline">Sync: {context.syncStatus}</Badge>}
+      {(context.lastSyncAt || context.updatedAt) && (
         <span className="text-xs text-gray-500">
-          Última sync: {new Date(context.updatedAt).toLocaleString('pt-BR')}
+          Última sync: {new Date(context.lastSyncAt || context.updatedAt || '').toLocaleString('pt-BR')}
         </span>
       )}
+      <select
+        value={syncMode}
+        onChange={(event) => setSyncMode(event.target.value as 'append' | 'upsert' | 'replace')}
+        className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+        title="Estratégia de sincronização"
+      >
+        <option value="upsert">Merge: Upsert</option>
+        <option value="append">Merge: Append</option>
+        <option value="replace">Merge: Replace</option>
+      </select>
       <MppSyncButton
         localProjectId={projectId}
+        syncMode={syncMode}
         onSynced={async () => {
           await loadContext()
           await onSynced?.()

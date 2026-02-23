@@ -112,20 +112,24 @@ export interface MppTask {
   duration?: number
 }
 
-export async function getMppTasks(
-  projectId: string,
-  searchParams?: URLSearchParams,
-  options?: MppRequestOptions
-) {
-  const query = searchParams?.toString()
-  const data = await mppFetch<{ items?: MppTask[]; data?: MppTask[] }>(
-    `/v1/projects/${projectId}/tasks${query ? `?${query}` : ''}`,
-    undefined,
-    options
-  )
+type MppTasksResponse = {
+  items?: MppTask[]
+  data?: MppTask[]
+  total?: number
+  count?: number
+  page?: number
+  pageSize?: number
+  page_size?: number
+  per_page?: number
+  hasNext?: boolean
+  has_next?: boolean
+  nextPage?: number | null
+  next_page?: number | null
+  next?: string | null
+}
 
-  const tasks = data.items || data.data || []
-  return tasks.map((task) => ({
+function normalizeMppTasks(data: MppTask[], projectId: string) {
+  return data.map((task) => ({
     id: String(task.id || task.uid || crypto.randomUUID()),
     projectId,
     task: task.task || task.name || 'Sem nome',
@@ -145,6 +149,69 @@ export async function getMppTasks(
       duration: task.duration || undefined,
     },
   }))
+}
+
+function hasExplicitPagination(searchParams?: URLSearchParams) {
+  if (!searchParams) return false
+  return ['page', 'pageSize', 'page_size', 'per_page', 'limit', 'offset', 'cursor'].some((key) => searchParams.has(key))
+}
+
+export async function getMppTasks(
+  projectId: string,
+  searchParams?: URLSearchParams,
+  options?: MppRequestOptions
+) {
+  const baseParams = new URLSearchParams(searchParams?.toString() || '')
+  const explicitPagination = hasExplicitPagination(searchParams)
+
+  if (explicitPagination) {
+    const query = baseParams.toString()
+    const data = await mppFetch<MppTasksResponse>(
+      `/v1/projects/${projectId}/tasks${query ? `?${query}` : ''}`,
+      undefined,
+      options
+    )
+    return normalizeMppTasks(data.items || data.data || [], projectId)
+  }
+
+  const pageSize = Number(baseParams.get('pageSize') || baseParams.get('page_size') || baseParams.get('per_page') || baseParams.get('limit') || '200')
+  const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.min(Math.floor(pageSize), 1000) : 200
+
+  const tasksById = new Map<string, MppTask>()
+  const seenPageSignatures = new Set<string>()
+  const maxPages = 200
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const params = new URLSearchParams(baseParams.toString())
+    params.set('page', String(page))
+    params.set('pageSize', String(safePageSize))
+    params.set('page_size', String(safePageSize))
+    params.set('per_page', String(safePageSize))
+
+    const data = await mppFetch<MppTasksResponse>(`/v1/projects/${projectId}/tasks?${params.toString()}`, undefined, options)
+    const pageTasks = data.items || data.data || []
+
+    const signature = `${pageTasks.length}:${String(pageTasks[0]?.id || pageTasks[0]?.uid || '')}:${String(pageTasks[pageTasks.length - 1]?.id || pageTasks[pageTasks.length - 1]?.uid || '')}`
+    if (seenPageSignatures.has(signature) && page > 1) {
+      break
+    }
+    seenPageSignatures.add(signature)
+
+    for (const task of pageTasks) {
+      const key = String(task.id || task.uid || crypto.randomUUID())
+      if (!tasksById.has(key)) tasksById.set(key, task)
+    }
+
+    const totalFromApi = Number(data.total ?? data.count)
+    const totalKnown = Number.isFinite(totalFromApi) && totalFromApi > 0 ? totalFromApi : undefined
+    const hasNext = Boolean(data.hasNext || data.has_next || data.nextPage || data.next_page || data.next)
+
+    if (hasNext) continue
+    if (totalKnown && tasksById.size >= totalKnown) break
+    if (pageTasks.length < safePageSize) break
+  }
+
+  return normalizeMppTasks(Array.from(tasksById.values()), projectId)
 }
 
 export async function getMppGantt(projectId: string, options?: MppRequestOptions) {

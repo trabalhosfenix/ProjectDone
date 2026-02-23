@@ -49,6 +49,20 @@ export async function getProjects(filters?: ProjectFilters) {
     const projects = await prisma.project.findMany({
       where,
       include: {
+        importedProjects: {
+          orderBy: { updatedAt: "desc" },
+          take: 5,
+          select: {
+            id: true,
+            externalUid: true,
+            externalProjectId: true,
+            source: true,
+            syncMode: true,
+            syncStatus: true,
+            lastSyncAt: true,
+            updatedAt: true,
+          },
+        },
         _count: {
           select: { items: true },
         },

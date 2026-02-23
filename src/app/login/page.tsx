@@ -9,19 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
-import { useEffect } from "react";
-import { seedFirstAdmin } from "@/app/actions/users";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-
-  useEffect(() => {
-    // Auto-seed admin user on first visit to login page
-    seedFirstAdmin();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,7 +34,7 @@ export default function LoginPage() {
         router.push("/dashboard");
         router.refresh();
       }
-    } catch (error) {
+    } catch {
       toast.error("Ocorreu um erro ao tentar fazer login.");
     } finally {
       setIsLoading(false);

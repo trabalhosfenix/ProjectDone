@@ -145,9 +145,11 @@ export function ProjectTable({ items, members = [] }: ProjectTableProps) {
     } else if (field === 'progress') {
        const num = parseFloat(editValue)
        if (isNaN(num)) return
+       const normalizedProgress = Math.max(0, Math.min(100, num))
+       const normalizedStatus = normalizedProgress >= 100 ? 'Concluído' : normalizedProgress > 0 ? 'Em andamento' : 'A iniciar'
        payload = { 
-         metadata: { progress: num / 100 },
-         status: num >= 100 ? 'Concluído' : 'A Fazer'
+         metadata: { progress: normalizedProgress / 100 },
+         status: normalizedStatus
        }
     } else if (field === 'responsible') {
        payload = { responsible: editValue }

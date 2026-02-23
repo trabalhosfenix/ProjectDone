@@ -1,7 +1,29 @@
 'use server'
 
+import { addDays, startOfDay } from 'date-fns'
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { isDoneStatus, normalizeTaskStatus } from '@/lib/task-status'
+import { syncProjectProgress } from '@/lib/project-progress'
+import { syncStatusAndProgress } from '@/lib/project-item-flow'
+
+type CreateKanbanItemInput = {
+  projectId: string
+  task: string
+  wbs?: string
+  scenario?: string
+  status?: string
+  priority?: string
+  responsible?: string
+  datePlanned?: Date | string | null
+  datePlannedEnd?: Date | string | null
+}
+
+function parseOptionalDate(value?: Date | string | null): Date | null {
+  if (!value) return null
+  const parsed = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
 
 /**
  * Buscar itens do Kanban
@@ -16,16 +38,30 @@ export async function getKanbanItems(projectId: string) {
         createdAt: 'asc'
       },
       select: {
-          id: true,
-          task: true, // Titulo
-          status: true, // Coluna: "A iniciar", "Em andamento", "Em espera", "Concluído"
-          responsible: true,
-          priority: true,
-          dateActualEnd: true // Usando como data de entrega/deadline
+        id: true,
+        wbs: true,
+        task: true,
+        scenario: true,
+        status: true,
+        responsible: true,
+        priority: true,
+        datePlanned: true,
+        datePlannedEnd: true,
+        dateActualStart: true,
+        dateActual: true,
+        originSheet: true,
+        externalId: true,
+        metadata: true
       }
     })
 
-    return { success: true, data: items }
+    return {
+      success: true,
+      data: items.map((item) => ({
+        ...item,
+        status: normalizeTaskStatus(item.status),
+      })),
+    }
   } catch (error) {
     console.error('Erro ao buscar kanban:', error)
     return { success: false, error: 'Falha ao carregar kanban' }
@@ -35,20 +71,37 @@ export async function getKanbanItems(projectId: string) {
 /**
  * Criar novo item no Kanban
  */
-export async function createKanbanItem(projectId: string, task: string, status: string = 'A iniciar', priority: string = 'Média', responsible?: string) {
+export async function createKanbanItem(input: CreateKanbanItemInput) {
   try {
+    const normalizedStatus = normalizeTaskStatus(input.status)
+    const plannedStart = parseOptionalDate(input.datePlanned) ?? startOfDay(new Date())
+    const plannedEnd = parseOptionalDate(input.datePlannedEnd) ?? addDays(plannedStart, 7)
+    const needsScheduling = !parseOptionalDate(input.datePlanned) || !parseOptionalDate(input.datePlannedEnd)
+
     const item = await prisma.projectItem.create({
       data: {
-        projectId,
-        task,
+        projectId: input.projectId,
+        task: input.task,
+        wbs: input.wbs?.trim() || null,
+        scenario: input.scenario || null,
         originSheet: 'KANBAN',
-        status,
-        priority,
-        responsible: responsible || null
+        status: normalizedStatus,
+        priority: input.priority || 'Média',
+        responsible: input.responsible || null,
+        datePlanned: plannedStart,
+        datePlannedEnd: plannedEnd,
+        metadata: {
+          needsScheduling,
+          createdFrom: 'KANBAN',
+          progress: isDoneStatus(normalizedStatus) ? 1 : 0,
+        },
       }
     })
 
-    revalidatePath(`/dashboard/projetos/${projectId}/acompanhamento/kanban`)
+    revalidatePath(`/dashboard/projetos/${input.projectId}/acompanhamento/kanban`)
+    revalidatePath(`/dashboard/projetos/${input.projectId}/kanban`)
+    revalidatePath(`/dashboard/projetos/${input.projectId}/cronograma`)
+    revalidatePath(`/dashboard/projetos/${input.projectId}/gantt`)
     return { success: true, data: item }
   } catch (error) {
     console.error('Erro ao criar item kanban:', error)
@@ -61,12 +114,52 @@ export async function createKanbanItem(projectId: string, task: string, status: 
  */
 export async function moveKanbanItem(itemId: string, projectId: string, newStatus: string) {
   try {
-    await prisma.projectItem.update({
+    const existing = await prisma.projectItem.findUnique({
       where: { id: itemId },
-      data: { status: newStatus }
+      select: { dateActualStart: true, dateActual: true, metadata: true, status: true }
     })
 
+    if (!existing) {
+      return { success: false, error: 'Card não encontrado' }
+    }
+
+    const flow = syncStatusAndProgress({
+      currentStatus: existing.status,
+      currentMetadata: existing.metadata,
+      patchStatus: newStatus,
+    })
+
+    const updateData: {
+      status: string
+      dateActualStart?: Date
+      dateActual?: Date | null
+      metadata: Record<string, unknown>
+    } = { status: flow.status, metadata: flow.metadata }
+
+    if (flow.status === 'Em andamento' && !existing.dateActualStart) {
+      updateData.dateActualStart = new Date()
+    }
+
+    if (flow.status === 'Concluído') {
+      if (!existing.dateActual) {
+        updateData.dateActual = new Date()
+      }
+    }
+
+    if (flow.status !== 'Concluído' && existing.dateActual) {
+      updateData.dateActual = null
+    }
+
+    await prisma.projectItem.update({
+      where: { id: itemId },
+      data: updateData
+    })
+    await syncProjectProgress(projectId)
+
     revalidatePath(`/dashboard/projetos/${projectId}/acompanhamento/kanban`)
+    revalidatePath(`/dashboard/projetos/${projectId}/kanban`)
+    revalidatePath(`/dashboard/projetos/${projectId}/cronograma`)
+    revalidatePath(`/dashboard/projetos/${projectId}/gantt`)
     return { success: true }
   } catch (error) {
     console.error('Erro ao mover item kanban:', error)
@@ -84,6 +177,9 @@ export async function deleteKanbanItem(itemId: string, projectId: string) {
     })
 
     revalidatePath(`/dashboard/projetos/${projectId}/acompanhamento/kanban`)
+    revalidatePath(`/dashboard/projetos/${projectId}/kanban`)
+    revalidatePath(`/dashboard/projetos/${projectId}/cronograma`)
+    revalidatePath(`/dashboard/projetos/${projectId}/gantt`)
     return { success: true }
   } catch (error) {
     console.error('Erro ao deletar item kanban:', error)

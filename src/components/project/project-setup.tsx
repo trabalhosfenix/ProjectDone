@@ -3,90 +3,67 @@
 import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  FileSpreadsheet, 
-  ListTodo, 
-  Upload, 
-  Loader2, 
-  ArrowRight, 
-  Download, 
-  ArrowLeft, 
+import {
+  FileSpreadsheet,
+  ListTodo,
+  Upload,
+  Loader2,
+  ArrowRight,
+  Download,
+  ArrowLeft,
   FileCode,
   Clock,
-  AlertCircle,
-  CheckCircle2
+  CheckCircle2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { importProjectExcel } from '@/app/actions/import-project'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Progress } from '@/components/ui/progress'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 
 interface ProjectSetupProps {
   projectId: string
   projectName?: string
 }
 
-interface ImportJob {
-  id: string
-  status: 'pending' | 'processing' | 'completed' | 'error'
-  progress: number
-  message?: string
+type ImportStatus = 'idle' | 'processing' | 'completed' | 'error'
+
+function extractProjectId(payload: Record<string, unknown>) {
+  const direct = payload.project_id || payload.projectId
+  if (direct) return String(direct)
+
+  const nested = payload.result || payload.data
+  if (nested && typeof nested === 'object') {
+    const nestedRecord = nested as Record<string, unknown>
+    const nestedId = nestedRecord.project_id || nestedRecord.projectId
+    if (nestedId) return String(nestedId)
+  }
+
+  return undefined
+}
+
+function normalizeStatus(value: unknown): ImportStatus {
+  const status = String(value || '').toLowerCase()
+  if (['completed', 'success', 'done', 'finished'].includes(status)) return 'completed'
+  if (['failed', 'error', 'canceled'].includes(status)) return 'error'
+  if (['processing', 'running', 'in_progress', 'queued', 'pending'].includes(status)) return 'processing'
+  return 'processing'
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
   const router = useRouter()
-  
-  // Estados para importação
+
   const [isImporting, setIsImporting] = useState(false)
   const [isImportingMSP, setIsImportingMSP] = useState(false)
-  const [importJob, setImportJob] = useState<ImportJob | null>(null)
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
-  
-  // Refs para inputs
+  const [mspMessage, setMspMessage] = useState('')
+  const [mspProgress, setMspProgress] = useState<number | null>(null)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const mspFileInputRef = useRef<HTMLInputElement>(null)
 
-  // Função para limpar polling
-  const clearPolling = () => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
-    }
-  }
-
-  // Função para verificar status do job
-  const pollJobStatus = async (jobId: string) => {
-    try {
-      const result = await checkImportStatus(jobId)
-      
-      setImportJob({
-        id: jobId,
-        status: result.status,
-        progress: result.progress || 0,
-        message: result.message
-      })
-
-      if (result.status === 'completed') {
-        clearPolling()
-        toast.success('Importação concluída com sucesso!')
-        router.refresh()
-        setTimeout(() => {
-          router.push(`/dashboard/projetos/${projectId}/gantt`)
-        }, 1500)
-      } else if (result.status === 'error') {
-        clearPolling()
-        toast.error(result.message || 'Erro na importação')
-        setIsImportingMSP(false)
-        setImportJob(null)
-      }
-    } catch (error) {
-      console.error('Erro ao verificar status:', error)
-    }
-  }
-
-  // Upload Excel (mantido similar)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -112,12 +89,10 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
     }
   }
 
-  // Upload MS Project com polling
   const handleMSPFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Validar extensão
     const ext = file.name.split('.').pop()?.toLowerCase()
     const validExts = ['mpp', 'mpx', 'xml', 'mpt']
     if (!validExts.includes(ext || '')) {
@@ -125,72 +100,96 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
       return
     }
 
+    const toastId = `mpp-import-${projectId}`
     setIsImportingMSP(true)
-    setImportJob({
-      id: 'starting',
-      status: 'pending',
-      progress: 0,
-      message: 'Iniciando importação...'
-    })
-
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('projectId', projectId)
+    setMspProgress(0)
+    setMspMessage('Enviando arquivo para processamento...')
+    toast.loading('Importando arquivo MPP...', { id: toastId })
 
     try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('projectId', projectId)
+
       const response = await fetch('/api/mpp/import-mpp', {
         method: 'POST',
         body: formData,
       })
+      const startResult = await response.json()
 
-      const result = await response.json()
-
-      if (!response.ok || !result.job_id) {
-        toast.error(result.error || 'Erro ao iniciar importação MS Project')
-        setIsImportingMSP(false)
-        return
+      if (!response.ok || !startResult.job_id) {
+        throw new Error(startResult.error || 'Erro ao iniciar importação do MS Project')
       }
 
-      toast.info('Importação iniciada. Processando arquivo .MPP...')
+      const jobId = String(startResult.job_id)
+      let mppProjectId = extractProjectId(startResult as Record<string, unknown>)
+      const timeoutAt = Date.now() + 10 * 60_000
 
-      const timeoutAt = Date.now() + 120000
+      setMspMessage('Arquivo recebido. Processando importação...')
+      toast.loading('Arquivo recebido. Processando importação...', { id: toastId })
+
       while (Date.now() < timeoutAt) {
-        const jobResponse = await fetch(`/api/mpp/jobs/${result.job_id}`)
-        const job = await jobResponse.json()
-        const status = String(job.status || '').toLowerCase()
+        const jobResponse = await fetch(`/api/mpp/jobs/${jobId}`, { cache: 'no-store' })
+        const jobData = await jobResponse.json()
+        const status = normalizeStatus(jobData.status)
 
-        if (status === 'completed' || status === 'success' || status === 'done') {
-          toast.success('Importação do MS Project concluída!')
-          router.refresh()
-          setIsImportingMSP(false)
+        const nextProgress = Number(jobData.progress || jobData.percent || 0)
+        setMspProgress(Number.isFinite(nextProgress) ? nextProgress : null)
+        setMspMessage(jobData.message || 'Processando arquivo MPP...')
+
+        const jobProjectId = extractProjectId(jobData as Record<string, unknown>)
+        if (jobProjectId) {
+          mppProjectId = jobProjectId
+        }
+
+        if (status === 'completed') {
+          if (!mppProjectId) {
+            throw new Error('Importação concluída sem identificar o projeto MPP')
+          }
+
+          setMspMessage('Importação concluída. Sincronizando tarefas no projeto...')
+          toast.loading('Importação concluída. Sincronizando tarefas...', { id: toastId })
+
+          const syncResponse = await fetch('/api/mpp/sync-project', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mppProjectId,
+              localProjectId: projectId,
+              syncMode: 'upsert',
+              projectNameHint: file.name,
+            }),
+          })
+
+          const syncResult = await syncResponse.json()
+          if (!syncResponse.ok || !syncResult.success) {
+            throw new Error(syncResult.error || 'Falha ao sincronizar tarefas importadas')
+          }
+
+          const importedTasks = Number(syncResult.importedTasks || syncResult.createdTasks || 0)
+          setMspProgress(100)
+          setMspMessage('Concluído. Redirecionando para o cronograma...')
+          toast.success(`Importação concluída: ${importedTasks} tarefas sincronizadas.`, { id: toastId })
+
+          router.push(`/dashboard/projetos/${projectId}/cronograma`)
           return
         }
 
-        if (status === 'failed' || status === 'error') {
-          toast.error(job.error || 'Falha ao processar arquivo .MPP')
-          setIsImportingMSP(false)
-          return
+        if (status === 'error') {
+          throw new Error(jobData.error || 'Falha ao processar arquivo .MPP')
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 1500))
+        await sleep(1500)
       }
 
-      toast.error('Tempo de processamento excedido. Verifique o status da API.')
-      setIsImportingMSP(false)
+      throw new Error('Tempo de processamento excedido. Tente novamente em instantes.')
     } catch (error) {
-      console.error(error)
-      toast.error('Erro de conexão com a MPP Platform API')
+      const message = error instanceof Error ? error.message : 'Erro de integração com MPP Platform API'
+      setMspMessage(message)
+      toast.error(message, { id: toastId })
+    } finally {
       setIsImportingMSP(false)
-      setImportJob(null)
     }
-  }
-
-  // Cancelar importação
-  const handleCancelImport = () => {
-    clearPolling()
-    setIsImportingMSP(false)
-    setImportJob(null)
-    toast.info('Importação cancelada')
   }
 
   const triggerFileUpload = () => fileInputRef.current?.click()
@@ -204,7 +203,6 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-8 bg-gray-50">
       <div className="max-w-5xl w-full space-y-8 relative">
-        {/* Header com título do projeto */}
         <div className="flex items-center gap-4 pb-4 border-b">
           <Link href="/dashboard">
             <Button variant="ghost" size="icon">
@@ -212,72 +210,24 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              {projectName || 'Configurar Projeto'}
-            </h1>
-            <p className="text-gray-500 text-sm">
-              ID: {projectId}
-            </p>
+            <h1 className="text-2xl font-bold text-gray-900">{projectName || 'Configurar Projeto'}</h1>
+            <p className="text-gray-500 text-sm">ID: {projectId}</p>
           </div>
         </div>
 
-        {/* Status da importação em andamento */}
-        {importJob && importJob.status !== 'completed' && (
-          <Alert className={importJob.status === 'error' ? 'bg-red-50' : 'bg-blue-50'}>
-            <div className="flex items-start gap-3">
-              {importJob.status === 'error' ? (
-                <AlertCircle className="w-5 h-5 text-red-500 mt-0.5" />
-              ) : (
-                <Loader2 className="w-5 h-5 text-blue-500 animate-spin mt-0.5" />
-              )}
-              <div className="flex-1 space-y-2">
-                <div className="flex justify-between">
-                  <p className="font-medium">
-                    {importJob.message || 'Processando...'}
-                  </p>
-                  {importJob.status === 'processing' && (
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      onClick={handleCancelImport}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      Cancelar
-                    </Button>
-                  )}
-                </div>
-                {importJob.status === 'processing' && (
-                  <>
-                    <Progress value={importJob.progress} className="h-2" />
-                    <p className="text-xs text-gray-500">
-                      {importJob.progress}% concluído
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-          </Alert>
-        )}
-
-        {/* Cards de opções */}
         <div className="text-center pt-4">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Como deseja iniciar?
-          </h1>
-          <p className="text-gray-500 mt-2 text-lg">
-            Escolha a melhor forma para importar ou criar seu cronograma
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900">Como deseja iniciar?</h1>
+          <p className="text-gray-500 mt-2 text-lg">Escolha a melhor forma para importar ou criar seu cronograma</p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
-          {/* Card Excel - Mantido */}
-          <Card 
+          <Card
             className="hover:shadow-lg transition-shadow border-2 border-transparent hover:border-green-100 cursor-pointer group relative overflow-hidden flex flex-col"
             onClick={triggerFileUpload}
           >
-            <input 
-              type="file" 
-              accept=".xlsx,.xls" 
+            <input
+              type="file"
+              accept=".xlsx,.xls"
               className="hidden"
               ref={fileInputRef}
               onChange={handleFileUpload}
@@ -288,9 +238,7 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
                 <FileSpreadsheet className="w-6 h-6 text-green-600" />
               </div>
               <CardTitle>Importar Excel</CardTitle>
-              <CardDescription>
-                Use um arquivo Excel (.xlsx) para carregar tarefas automaticamente.
-              </CardDescription>
+              <CardDescription>Use um arquivo Excel (.xlsx) para carregar tarefas automaticamente.</CardDescription>
             </CardHeader>
             <CardContent className="flex-1">
               <ul className="text-sm text-gray-500 space-y-2">
@@ -304,11 +252,11 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                  <a 
-                    href="/templates/Modelo_Cronograma.xlsx" 
+                  <a
+                    href="/templates/Modelo_Cronograma.xlsx"
                     download
                     className="text-blue-600 hover:underline hover:text-blue-800 flex items-center gap-1"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
                     target="_blank"
                   >
                     Modelo padrão
@@ -334,27 +282,23 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
             </CardFooter>
           </Card>
 
-          {/* Card MS Project - MELHORADO */}
-          <Card 
+          <Card
             className={`hover:shadow-lg transition-shadow border-2 relative overflow-hidden flex flex-col ${
               isImportingMSP ? 'border-purple-300 bg-purple-50/30' : 'border-transparent hover:border-purple-100 cursor-pointer'
             }`}
             onClick={!isImportingMSP ? triggerMSPFileUpload : undefined}
           >
-            <input 
-              type="file" 
-              accept=".mpp,.mpx,.xml,.mpt" 
+            <input
+              type="file"
+              accept=".mpp,.mpx,.xml,.mpt"
               className="hidden"
               ref={mspFileInputRef}
               onChange={handleMSPFileUpload}
               disabled={isImportingMSP}
             />
-            
-            {/* Badge de destaque */}
+
             <div className="absolute top-2 right-2">
-              <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-1 rounded-full">
-                NOVO
-              </span>
+              <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-1 rounded-full">NOVO</span>
             </div>
 
             <CardHeader>
@@ -362,9 +306,7 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
                 <FileCode className="w-6 h-6 text-purple-600" />
               </div>
               <CardTitle>Importar MS Project</CardTitle>
-              <CardDescription>
-                Importe diretamente do Microsoft Project (.mpp, .xml).
-              </CardDescription>
+              <CardDescription>Importe diretamente do Microsoft Project (.mpp, .xml).</CardDescription>
             </CardHeader>
             <CardContent className="flex-1">
               <ul className="text-sm text-gray-500 space-y-2">
@@ -391,15 +333,11 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
               </ul>
             </CardContent>
             <CardFooter className="flex flex-col gap-3">
-              <Button 
-                className="w-full" 
-                variant={isImportingMSP ? "default" : "outline"}
-                disabled={isImportingMSP}
-              >
+              <Button className="w-full" variant={isImportingMSP ? 'default' : 'outline'} disabled={isImportingMSP}>
                 {isImportingMSP ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {importJob?.message || 'Importando...'}
+                    {mspMessage || 'Importando...'}
                   </>
                 ) : (
                   <>
@@ -408,19 +346,25 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
                   </>
                 )}
               </Button>
+              {isImportingMSP && (
+                <p className="text-xs text-center text-gray-500 w-full">
+                  {mspMessage}
+                  {typeof mspProgress === 'number' ? ` (${mspProgress}%)` : ''}
+                </p>
+              )}
             </CardFooter>
           </Card>
 
-          {/* Card Manual - Mantido */}
-          <Card className="hover:shadow-lg transition-shadow border-2 border-transparent hover:border-blue-100 cursor-pointer group" onClick={handleManualCreate}>
+          <Card
+            className="hover:shadow-lg transition-shadow border-2 border-transparent hover:border-blue-100 cursor-pointer group"
+            onClick={handleManualCreate}
+          >
             <CardHeader>
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                 <ListTodo className="w-6 h-6 text-blue-600" />
               </div>
               <CardTitle>Criar Manualmente</CardTitle>
-              <CardDescription>
-                Comece do zero e adicione tarefas no quadro Kanban.
-              </CardDescription>
+              <CardDescription>Comece do zero e adicione tarefas no quadro Kanban.</CardDescription>
             </CardHeader>
             <CardContent>
               <ul className="text-sm text-gray-500 space-y-2">
@@ -447,12 +391,8 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
           </Card>
         </div>
 
-        {/* Informações adicionais */}
         <div className="text-center text-sm text-gray-400 pt-8">
-          <p>
-            Após a importação, você poderá visualizar o Gantt, editar tarefas no Kanban
-            e acompanhar o progresso pelo dashboard.
-          </p>
+          <p>Após a importação, você será direcionado ao cronograma com as tarefas importadas.</p>
         </div>
       </div>
     </div>

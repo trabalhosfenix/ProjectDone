@@ -9,7 +9,6 @@ import {
   getProjectFilterOptions,
   type ProjectFilters,
 } from "@/app/actions/projects";
-import { getImportedProjects, syncProjectWithLocal } from "@/app/actions/imported-projects";
 import { getProjectTypes } from "@/app/actions/project-types";
 import { 
   FolderKanban, 
@@ -31,7 +30,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 
 const STATUS_OPTIONS = [
@@ -73,7 +71,6 @@ const normalizeSource = (source?: string | null): keyof typeof SOURCE_TYPES => {
 export function ProjectList() {
   const { toast } = useToast();
   const [projects, setProjects] = useState<any[]>([]);
-  const [importedProjects, setImportedProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"list" | "new" | "edit">("list");
   const [selectedProject, setSelectedProject] = useState<any>(null);
@@ -114,7 +111,6 @@ export function ProjectList() {
     try {
       await Promise.all([
         loadProjects(),
-        loadImportedProjects(),
         loadFilterOptions(),
         loadTypes()
       ]);
@@ -144,16 +140,6 @@ export function ProjectList() {
     }
   };
 
-  const loadImportedProjects = async () => {
-    const result = await getImportedProjects({ 
-      limit: 100,
-      status: filters.status?.[0] 
-    });
-    if (result && result.projects) {
-      setImportedProjects(result.projects);
-    }
-  };
-
   const loadFilterOptions = async () => {
     const result = await getProjectFilterOptions();
     if (result.success && result.options) {
@@ -161,18 +147,38 @@ export function ProjectList() {
     }
   };
 
-  const handleSync = async (projectId: string) => {
-    setSyncingId(projectId);
+  const handleSync = async (project: any) => {
+    const externalUid = project.primaryImported?.externalProjectId || project.primaryImported?.externalUid;
+    if (!externalUid) {
+      toast({
+        title: "Sincronização indisponível",
+        description: "Este projeto não possui vínculo externo para sincronização.",
+        variant: "warning"
+      });
+      return;
+    }
+
+    setSyncingId(project.id);
     try {
-      const result = await syncProjectWithLocal(projectId);
-      if (result.success) {
+      const response = await fetch("/api/mpp/sync-project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mppProjectId: String(externalUid),
+          localProjectId: project.id,
+          syncMode: "upsert",
+        }),
+      });
+      const result = await response.json();
+
+      if (response.ok && result.success) {
         toast({
           title: "Sucesso",
-          description: "Projeto sincronizado com sucesso"
+          description: `Projeto sincronizado (${result.importedTasks || 0} tarefas atualizadas)`
         });
-        await loadImportedProjects();
+        await loadProjects();
       } else {
-        throw new Error(result.error);
+        throw new Error(result.error || "Falha ao sincronizar");
       }
     } catch (error) {
       toast({
@@ -187,26 +193,35 @@ export function ProjectList() {
 
   // Combinar projetos baseado na tab ativa
   const getDisplayProjects = () => {
+    const normalizedProjects = projects.map((project) => ({
+      primaryImported: Array.isArray(project.importedProjects) ? project.importedProjects[0] : null,
+      ...project,
+      source: normalizeSource(project.importedProjects?.[0]?.source),
+      externalUid: project.importedProjects?.[0]?.externalProjectId || project.importedProjects?.[0]?.externalUid || null,
+      importedAt: project.importedProjects?.[0]?.updatedAt || null,
+      syncStatus: project.importedProjects?.[0]?.syncStatus || null,
+      syncMode: project.importedProjects?.[0]?.syncMode || null,
+      lastSyncAt: project.importedProjects?.[0]?.lastSyncAt || null,
+      sourceTypes: Array.from(
+        new Set(
+          (project.importedProjects || [])
+            .map((source: any) => normalizeSource(source?.source))
+            .filter(Boolean)
+        )
+      ),
+      hasExternalSource: Boolean(project.importedProjects?.[0]?.externalProjectId || project.importedProjects?.[0]?.externalUid),
+    }));
+
     switch (activeTab) {
       case "local":
-        return projects.map(p => ({ ...p, source: 'local' }));
+        return normalizedProjects.filter((project) => !project.hasExternalSource);
       case "imported":
-        return importedProjects.map((p) => ({
-          ...p,
-          source: normalizeSource(p.sourceFormat),
-        }));
+        return normalizedProjects.filter((project) => project.hasExternalSource);
       case "all":
       default:
-        return [
-          ...projects.map(p => ({ ...p, source: 'local' })),
-          ...importedProjects.map((p) => ({
-            ...p,
-            source: normalizeSource(p.sourceFormat),
-          }))
-        ].sort((a, b) => {
-          // Ordenar por data de criação/importação (mais recente primeiro)
-          const dateA = a.createdAt || a.importedAt;
-          const dateB = b.createdAt || b.importedAt;
+        return normalizedProjects.sort((a, b) => {
+          const dateA = a.importedAt || a.createdAt;
+          const dateB = b.importedAt || b.createdAt;
           return new Date(dateB).getTime() - new Date(dateA).getTime();
         });
     }
@@ -215,14 +230,22 @@ export function ProjectList() {
   const displayProjects = getDisplayProjects();
 
   const getSourceBadge = (project: any) => {
-    const source = normalizeSource(project.source);
-    const config = SOURCE_TYPES[source as keyof typeof SOURCE_TYPES] || SOURCE_TYPES.local;
-    
+    const sources = project.hasExternalSource
+      ? (project.sourceTypes.length ? project.sourceTypes : [normalizeSource(project.primaryImported?.source || project.source)])
+      : ["local"];
+
     return (
-      <Badge className={config.color}>
-        <config.icon className="w-3 h-3 mr-1" />
-        {config.label}
-      </Badge>
+      <div className="flex items-center justify-center gap-1 flex-wrap">
+        {sources.map((source: keyof typeof SOURCE_TYPES) => {
+          const config = SOURCE_TYPES[source] || SOURCE_TYPES.local;
+          return (
+            <Badge key={`${project.id}-${source}`} className={config.color}>
+              <config.icon className="w-3 h-3 mr-1" />
+              {config.label}
+            </Badge>
+          );
+        })}
+      </div>
     );
   };
 
@@ -248,16 +271,6 @@ export function ProjectList() {
   };
 
   const handleEdit = (project: any) => {
-    // Só permitir edição de projetos locais
-    if (project.source !== 'local') {
-      toast({
-        title: "Ação não permitida",
-        description: "Projetos importados só podem ser visualizados, não editados diretamente.",
-        variant: "warning"
-      });
-      return;
-    }
-
     setSelectedProject(project);
     setFormData({
       name: project.name || "",
@@ -328,16 +341,6 @@ export function ProjectList() {
   };
 
   const handleDelete = async (project: any) => {
-    // Só permitir exclusão de projetos locais
-    if (project.source !== 'local') {
-      toast({
-        title: "Ação não permitida",
-        description: "Projetos importados não podem ser excluídos diretamente.",
-        variant: "warning"
-      });
-      return;
-    }
-
     if (!confirm(`Deseja realmente excluir o projeto "${project.name}"?`)) {
       return;
     }
@@ -616,25 +619,25 @@ export function ProjectList() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-center">
         <div>
           <h2 className="text-2xl font-bold">Gestão de Projetos</h2>
           <p className="text-gray-600 text-sm mt-1">
             Gerencie projetos locais e importados
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
           <Button
             onClick={() => window.location.href = '/dashboard/import'}
             variant="outline"
-            className="flex items-center gap-2"
+            className="flex items-center justify-center gap-2 w-full md:w-auto"
           >
             <Database className="w-4 h-4" />
             Importar MPP
           </Button>
           <Button
             onClick={handleNew}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
+            className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white w-full md:w-auto"
           >
             <Plus className="w-4 h-4" />
             Novo Projeto Local
@@ -662,7 +665,7 @@ export function ProjectList() {
         <TabsContent value={activeTab} className="mt-6">
           {/* Filtros (compartilhados) */}
           <div className="bg-white border rounded-lg p-4 mb-6">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className="flex items-center gap-2 text-gray-700 font-semibold"
@@ -738,7 +741,8 @@ export function ProjectList() {
 
           {/* Tabela */}
           <div className="bg-white border rounded-lg overflow-hidden">
-            <table className="w-full">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px]">
               <thead className="bg-gray-800 text-white">
                 <tr>
                   <th className="text-left p-4">Projeto</th>
@@ -776,7 +780,7 @@ export function ProjectList() {
                               {project.code && (
                                 <span className="text-gray-500">{project.code}</span>
                               )}
-                              {project.source !== 'local' && project.importedAt && (
+                              {project.hasExternalSource && project.importedAt && (
                                 <span className="text-gray-400">
                                   {new Date(project.importedAt).toLocaleDateString('pt-BR')}
                                 </span>
@@ -789,14 +793,21 @@ export function ProjectList() {
                         {getSourceBadge(project)}
                       </td>
                       <td className="p-4 text-center">
-                        <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                          project.status === "Concluído" ? "bg-green-100 text-green-700" :
-                          project.status === "Andamento" ? "bg-blue-100 text-blue-700" :
-                          project.status === "Atraso" ? "bg-red-100 text-red-700" :
-                          "bg-gray-100 text-gray-700"
-                        }`}>
-                          {project.status || (project.source !== 'local' ? 'Importado' : 'A iniciar')}
-                        </span>
+                        <div className="space-y-1">
+                          <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
+                            project.status === "Concluído" ? "bg-green-100 text-green-700" :
+                            project.status === "Andamento" ? "bg-blue-100 text-blue-700" :
+                            project.status === "Atraso" ? "bg-red-100 text-red-700" :
+                            "bg-gray-100 text-gray-700"
+                          }`}>
+                            {project.status || (project.source !== 'local' ? 'Importado' : 'A iniciar')}
+                          </span>
+                          {project.hasExternalSource && project.syncStatus && (
+                            <div className="text-[11px] text-gray-500">
+                              Sync: {project.syncStatus}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 text-center text-sm">{project.type || "-"}</td>
                       <td className="p-4 text-center text-sm">{project.area || "-"}</td>
@@ -806,40 +817,35 @@ export function ProjectList() {
                         </span>
                       </td>
                       <td className="p-4">
-                        <div className="flex items-center justify-center gap-2">
-                          {project.source === 'local' ? (
-                            // Ações para projetos locais
-                            <>
-                              <a
-                                href={`/dashboard/projetos/${project.id}`}
-                                className="flex items-center gap-1 text-green-600 hover:text-green-800 text-sm font-medium hover:underline"
-                              >
-                                <FolderKanban className="w-3 h-3" />
-                                Detalhes
-                              </a>
-                              <button
-                                onClick={() => handleEdit(project)}
-                                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline"
-                              >
-                                <Edit className="w-3 h-3" />
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => handleDelete(project)}
-                                disabled={project._count?.items > 0}
-                                className="flex items-center gap-1 text-red-600 hover:text-red-800 text-sm font-medium hover:underline disabled:opacity-30 disabled:cursor-not-allowed"
-                                title={
-                                  project._count?.items > 0
-                                    ? "Não é possível excluir projeto com tarefas vinculadas"
-                                    : "Excluir projeto"
-                                }
-                              >
-                                <Trash2 className="w-3 h-3" />
-                                Excluir
-                              </button>
-                            </>
-                          ) : (
-                            // Ações para projetos importados
+                        <div className="flex items-center justify-center gap-2 flex-wrap">
+                          <a
+                            href={`/dashboard/projetos/${project.id}`}
+                            className="flex items-center gap-1 text-green-600 hover:text-green-800 text-sm font-medium hover:underline"
+                          >
+                            <FolderKanban className="w-3 h-3" />
+                            Detalhes
+                          </a>
+                          <button
+                            onClick={() => handleEdit(project)}
+                            className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline"
+                          >
+                            <Edit className="w-3 h-3" />
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => handleDelete(project)}
+                            disabled={project._count?.items > 0}
+                            className="flex items-center gap-1 text-red-600 hover:text-red-800 text-sm font-medium hover:underline disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={
+                              project._count?.items > 0
+                                ? "Não é possível excluir projeto com tarefas vinculadas"
+                                : "Excluir projeto"
+                            }
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Excluir
+                          </button>
+                          {project.hasExternalSource && (
                             <>
                               <button
                                 onClick={() => handleViewImported(project.id, project.externalUid)}
@@ -849,7 +855,7 @@ export function ProjectList() {
                                 Abrir Gantt
                               </button>
                               <button
-                                onClick={() => handleSync(project.id)}
+                                onClick={() => handleSync(project)}
                                 disabled={syncingId === project.id}
                                 className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline disabled:opacity-50"
                               >
@@ -883,20 +889,21 @@ export function ProjectList() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Rodapé com contagem */}
-          <div className="flex justify-between items-center mt-4 text-sm text-gray-500">
+          <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center mt-4 text-sm text-gray-500">
             <div>
               {displayProjects.length} projeto(s) listado(s)
               {activeTab === 'all' && (
                 <span className="ml-2 text-xs">
-                  ({projects.length} locais, {importedProjects.length} importados)
+                  ({projects.filter((p) => !(p.importedProjects?.[0]?.externalProjectId || p.importedProjects?.[0]?.externalUid)).length} locais, {projects.filter((p) => Boolean(p.importedProjects?.[0]?.externalProjectId || p.importedProjects?.[0]?.externalUid)).length} com fonte externa)
                 </span>
               )}
             </div>
             
-            {activeTab === 'imported' && importedProjects.length > 0 && (
+            {activeTab === 'imported' && projects.some((p) => Boolean(p.importedProjects?.[0]?.externalProjectId || p.importedProjects?.[0]?.externalUid)) && (
               <div className="flex items-center gap-2 text-xs bg-blue-50 p-2 rounded">
                 <AlertCircle className="w-4 h-4 text-blue-500" />
                 <span>Clique em "Sincronizar" para integrar com o módulo de issues/riscos</span>

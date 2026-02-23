@@ -288,6 +288,7 @@ export async function recalculateProjectSchedule(projectId: string) {
     revalidatePath(`/dashboard/projetos/${projectId}/cronograma`)
     revalidatePath(`/dashboard/projetos/${projectId}/gantt`)
     revalidatePath(`/dashboard/projetos/${projectId}/kanban`)
+    revalidatePath(`/dashboard/projetos/${projectId}/acompanhamento/kanban`)
 
     return {
       success: true,

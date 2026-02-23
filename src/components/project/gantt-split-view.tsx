@@ -21,6 +21,7 @@ interface GanttSplitViewProps {
   onDateChange?: (task: GanttSplitTask, start: Date, end: Date) => void
   onProgressChange?: (task: GanttSplitTask, progress: number) => void
   viewMode?: 'Day' | 'Week' | 'Month' | 'Year'
+  theme?: 'light' | 'dark'
 }
 
 export function GanttSplitView({
@@ -29,6 +30,7 @@ export function GanttSplitView({
   onDateChange,
   onProgressChange,
   viewMode = 'Week',
+  theme = 'light',
 }: GanttSplitViewProps) {
   const safeDate = (value: string) => {
     const parsed = new Date(value)
@@ -65,10 +67,12 @@ export function GanttSplitView({
     return { label: 'Não iniciado', classes: 'bg-slate-100 text-slate-700 border-slate-200' }
   }
 
+  const dark = theme === 'dark'
+
   return (
-    <div className="flex h-full min-h-[620px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <aside className="flex w-[560px] shrink-0 flex-col border-r border-slate-200 bg-white">
-        <div className="grid h-[54px] grid-cols-[72px_minmax(0,1fr)_124px_84px_84px_56px_116px] items-center border-b border-slate-200 bg-slate-50 px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+    <div className={`flex h-full min-h-[620px] overflow-hidden rounded-xl border shadow-sm ${dark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+      <aside className={`flex w-[55%] shrink-0 flex-col border-r ${dark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+        <div className={`grid h-[54px] grid-cols-[72px_minmax(0,1fr)_124px_84px_84px_56px_116px] items-center border-b px-2 text-[11px] font-semibold uppercase tracking-wide ${dark ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
           <span className="px-2">EAP</span>
           <span className="px-2">Atividade</span>
           <span className="px-2">Responsável</span>
@@ -87,20 +91,20 @@ export function GanttSplitView({
               <button
                 key={task.id}
                 type="button"
-                className="grid h-[38px] w-full grid-cols-[72px_minmax(0,1fr)_124px_84px_84px_56px_116px] items-center border-b border-slate-100 px-2 text-left text-sm hover:bg-slate-50"
+                className={`grid h-[38px] w-full grid-cols-[72px_minmax(0,1fr)_124px_84px_84px_56px_116px] items-center border-b px-2 text-left text-sm ${dark ? 'border-slate-800 hover:bg-slate-800/70' : 'border-slate-100 hover:bg-slate-50'}`}
                 onClick={() => onTaskClick?.(task)}
               >
-                <span className="truncate px-2 font-mono text-xs text-slate-500">{task.wbs || idx + 1}</span>
-                <span className="truncate px-2 font-medium text-slate-800" style={{ paddingLeft: `${8 + depth * 14}px` }} title={task.name}>
+                <span className={`truncate px-2 font-mono text-xs ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{task.wbs || idx + 1}</span>
+                <span className={`truncate px-2 font-medium text-xs ${dark ? 'text-slate-100' : 'text-slate-800'}`} style={{ paddingLeft: `${8 + depth * 14}px` }} title={task.name}>
                   {depth > 0 ? '└ ' : ''}
                   {task.name}
                 </span>
-                <span className="truncate px-2 text-xs text-slate-600" title={task.responsible || ''}>
+                <span className={`truncate px-2 text-xs ${dark ? 'text-slate-300' : 'text-slate-600'}`} title={task.responsible || ''}>
                   {task.responsible ? task.responsible.split(' ')[0] : '-'}
                 </span>
-                <span className="px-1 text-center text-xs text-slate-500">{formatDate(task.start)}</span>
-                <span className="px-1 text-center text-xs text-slate-500">{formatDate(task.end)}</span>
-                <span className="px-1 text-center text-xs font-semibold text-slate-700">{task.progress}%</span>
+                <span className={`px-1 text-center text-xs ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{formatDate(task.start)}</span>
+                <span className={`px-1 text-center text-xs ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{formatDate(task.end)}</span>
+                <span className={`px-1 text-center text-xs font-semibold ${dark ? 'text-slate-200' : 'text-slate-700'}`}>{task.progress}%</span>
                 <span className="px-1 text-center">
                   <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${status.classes}`}>
                     {status.label}
@@ -112,11 +116,12 @@ export function GanttSplitView({
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col bg-white">
+      <section className={`flex min-w-0 flex-1 flex-col ${dark ? 'bg-slate-900' : 'bg-white'}`}>
         <div className="h-full min-h-[620px]">
           <GanttChart
             tasks={tasks}
             viewMode={viewMode}
+            theme={theme}
             onTaskClick={onTaskClick}
             onDateChange={onDateChange}
             onProgressChange={onProgressChange}

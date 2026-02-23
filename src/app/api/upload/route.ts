@@ -97,38 +97,43 @@ export async function POST(req: NextRequest) {
                const dtInicial = parseExcelDate(row["Dt Inicial"] || row["Data Inicial"] || row["Início"] || row["Prazo Inicial"] || row["Start"]);
                const dtConclusao = parseExcelDate(row["Dt Conclusão"] || row["Dt Conclusao"] || row["Data Final"] || row["Fim"] || row["Prazo Final"] || row["End"]);
 
-               await prisma.projectItem.upsert({
-                   where: { externalId: String(externalId) },
-                   update: {
-                       originSheet: sheetName,
-                       scenario: scenario ? String(scenario) : null,
-                       task: task ? String(task) : null,
-                       responsible: responsible ? String(responsible) : null,
-                       status: status ? String(status) : null,
-                       priority: priority ? String(priority) : "Média",
-                       perspective: perspective ? String(perspective) : "Geral",
-                       weight: weight,
-                       plannedValue: plannedValue,
-                       actualCost: actualCost,
-                       datePlanned: dtInicial,
-                       dateActual: dtConclusao,
+               const normalizedExternalId = String(externalId)
+               const existing = await prisma.projectItem.findFirst({
+                 where: {
+                   projectId: null,
+                   externalId: normalizedExternalId,
+                 },
+                 select: { id: true },
+               })
+
+               const data = {
+                 originSheet: sheetName,
+                 scenario: scenario ? String(scenario) : null,
+                 task: task ? String(task) : null,
+                 responsible: responsible ? String(responsible) : null,
+                 status: status ? String(status) : null,
+                 priority: priority ? String(priority) : "Média",
+                 perspective: perspective ? String(perspective) : "Geral",
+                 weight: weight,
+                 plannedValue: plannedValue,
+                 actualCost: actualCost,
+                 datePlanned: dtInicial,
+                 dateActual: dtConclusao,
+               }
+
+               if (existing) {
+                 await prisma.projectItem.update({
+                   where: { id: existing.id },
+                   data,
+                 })
+               } else {
+                 await prisma.projectItem.create({
+                   data: {
+                     externalId: normalizedExternalId,
+                     ...data,
                    },
-                   create: {
-                       externalId: String(externalId),
-                       originSheet: sheetName,
-                       scenario: scenario ? String(scenario) : null,
-                       task: task ? String(task) : null,
-                       responsible: responsible ? String(responsible) : null,
-                       status: status ? String(status) : null,
-                       priority: priority ? String(priority) : "Média",
-                       perspective: perspective ? String(perspective) : "Geral",
-                       weight: weight,
-                       plannedValue: plannedValue,
-                       actualCost: actualCost,
-                       datePlanned: dtInicial,
-                       dateActual: dtConclusao,
-                   }
-               });
+                 })
+               }
                totalProcessed++;
            } catch (rowError) {
                console.error("Error processing row:", rowError);

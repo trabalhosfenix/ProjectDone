@@ -5,7 +5,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { cn } from '@/lib/utils'
-import { Calendar, Plus, X, MoreHorizontal, MessageSquare, Settings } from 'lucide-react'
+import { Calendar, Plus, X, MessageSquare, Settings } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { createProjectItem } from '@/app/actions/items'
@@ -33,10 +33,24 @@ interface KanbanColumnProps {
   ) => Promise<void>
 }
 
+function normalizeTaskTitle(task?: string | null) {
+  const value = String(task || '').trim()
+  return value || 'Tarefa sem titulo'
+}
+
+function normalizeOriginLabel(origin?: string | null) {
+  const key = String(origin || '').trim().toUpperCase()
+  if (!key) return 'Manual'
+  if (key === 'KANBAN' || key === 'MANUAL') return 'Manual'
+  if (key === 'CRONOGRAMA_IMPORT') return 'Importado'
+  return key
+}
+
 export function KanbanColumn({ id, title, items, projectId, onAdd, onCardClick, allowCreate = true, onQuickUpdate }: KanbanColumnProps) {
-  const { setNodeRef } = useDroppable({ id })
+  const { setNodeRef, isOver } = useDroppable({ id })
   const [isAdding, setIsAdding] = useState(false)
   const [newTask, setNewTask] = useState('')
+  const [newWbs, setNewWbs] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const canCreate = allowCreate && (Boolean(onAdd) || Boolean(projectId))
 
@@ -59,6 +73,7 @@ export function KanbanColumn({ id, title, items, projectId, onAdd, onCardClick, 
       } else {
         const result = await createProjectItem({
           task: newTask,
+          wbs: newWbs || undefined,
           status: id,
           originSheet: 'Kanban',
           projectId,
@@ -70,6 +85,7 @@ export function KanbanColumn({ id, title, items, projectId, onAdd, onCardClick, 
       }
 
       setNewTask('')
+      setNewWbs('')
       setIsAdding(false)
       toast.success('Tarefa adicionada!')
     } finally {
@@ -78,36 +94,48 @@ export function KanbanColumn({ id, title, items, projectId, onAdd, onCardClick, 
   }
 
   return (
-    <div className="flex flex-col w-[320px] h-full max-h-full bg-[#f1f2f4] rounded-xl shadow-sm border border-gray-200/50 p-3 shrink-0">
-      <div className="flex justify-between items-center mb-4 px-1.5 group/header">
-        <div className="flex items-center gap-3 overflow-hidden">
-          <h3 className="font-bold text-[#172b4d] text-base truncate" title={title}>
+    <div className="min-w-[280px] w-[300px] flex flex-col bg-gray-50 rounded-xl border border-gray-200 h-full max-h-full shadow-sm">
+      <div className={`p-4 border-b flex justify-between items-center rounded-t-xl bg-white sticky top-0 z-10 ${id === 'Concluído' ? 'border-green-200' : 'border-slate-200'}`}>
+        <div className="flex items-center gap-2 overflow-hidden">
+          <span className="font-semibold text-gray-700 truncate" title={title}>
             {title}
-          </h3>
-          <span className="text-[#44546f] text-xs font-black px-2 py-1 rounded-full bg-black/5 shadow-inner">{items.length}</span>
+          </span>
+          <span className="text-xs bg-gray-100 text-gray-500 hover:bg-gray-200 px-2 py-0.5 rounded-full">{items.length}</span>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity">
-          <MoreHorizontal className="w-4 h-4 text-[#44546f]" />
-        </Button>
+        {canCreate ? (
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setIsAdding(true)}>
+            <Plus className="w-4 h-4 text-gray-400 hover:text-blue-600" />
+          </Button>
+        ) : null}
       </div>
 
-      <div ref={setNodeRef} className="flex-1 space-y-2.5 min-h-[100px] overflow-y-auto pr-1 custom-scrollbar">
+      <div
+        ref={setNodeRef}
+        className={cn(
+          'flex-1 overflow-y-auto p-3 space-y-3 transition-colors duration-200',
+          isOver ? 'bg-blue-50/40' : 'bg-transparent'
+        )}
+      >
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
           {items.map((item) => (
             <KanbanItem key={item.id} item={item} onClick={() => onCardClick?.(item)} onQuickUpdate={onQuickUpdate} />
           ))}
         </SortableContext>
 
-        {items.length === 0 && <div className="border border-dashed border-gray-300 rounded-lg h-16 flex items-center justify-center text-xs text-gray-500">Arraste cards para esta coluna</div>}
+        {items.length === 0 && (
+          <div className="h-20 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-sm italic bg-white/60">
+            Arraste itens aqui
+          </div>
+        )}
       </div>
 
-      <div className="mt-3">
+      <div className="p-3 pt-0 bg-transparent">
         {isAdding ? (
-          <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-200 space-y-2">
+          <div className="mb-0">
             <textarea
               autoFocus
-              className="w-full text-sm p-2 border-none focus:ring-0 resize-none min-h-[60px]"
-              placeholder="Insira um título para este cartão..."
+              className="w-full rounded-md border border-input bg-white px-3 py-2 text-sm resize-none min-h-[60px] mb-2"
+              placeholder="Título do card..."
               value={newTask}
               onChange={(e) => setNewTask(e.target.value)}
               onKeyDown={(e) => {
@@ -117,12 +145,27 @@ export function KanbanColumn({ id, title, items, projectId, onAdd, onCardClick, 
                 }
               }}
             />
+            <Input
+              placeholder="WBS (ex: 1.2.3)"
+              value={newWbs}
+              onChange={(e) => setNewWbs(e.target.value)}
+              className="mb-2 bg-white"
+            />
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={handleAdd} disabled={isSubmitting} className="bg-[#0c66e4] hover:bg-[#0055cc] text-white font-semibold">
+              <Button size="sm" onClick={handleAdd} disabled={isSubmitting}>
                 Adicionar cartão
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => setIsAdding(false)} className="h-8 w-8">
-                <X className="w-4 h-4 text-[#44546f]" />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setIsAdding(false)
+                  setNewTask('')
+                  setNewWbs('')
+                }}
+                className="h-8 w-8 text-gray-500"
+              >
+                <X className="w-4 h-4" />
               </Button>
             </div>
           </div>
@@ -161,7 +204,7 @@ function KanbanItem({
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [form, setForm] = useState({
-    task: item.task,
+    task: normalizeTaskTitle(item.task),
     responsible: item.responsible || '',
     priority: item.priority || 'Média',
     status: (item.status || 'A iniciar') as (typeof BOARD_COLUMNS)[number],
@@ -170,7 +213,7 @@ function KanbanItem({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
 
   const style = {
-    transform: CSS.Translate.toString(transform),
+    transform: CSS.Transform.toString(transform),
     transition,
   }
 
@@ -216,8 +259,8 @@ function KanbanItem({
           }
         }}
         className={cn(
-          'bg-white p-3 rounded-xl shadow-[0_1px_1px_rgba(9,30,66,0.25),0_0_1px_rgba(9,30,66,0.31)] border-none cursor-pointer active:cursor-grabbing hover:bg-[#f7f8f9] transition-all group/card relative',
-          isDragging && 'opacity-50 ring-2 ring-[#0c66e4] z-50 rotate-2'
+          'bg-white p-3 rounded-xl shadow-sm border border-gray-200 cursor-pointer active:cursor-grabbing hover:shadow-md transition-all duration-200 group/card relative',
+          isDragging && 'opacity-60 ring-2 ring-[#0c66e4] z-50 rotate-2 shadow-xl'
         )}
       >
         <Button
@@ -235,10 +278,10 @@ function KanbanItem({
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2 items-start">
             <span className={cn('text-[11px] font-black px-2.5 py-1 rounded-md border shadow-sm', priorityColor)}>{(item.priority || 'Média').toUpperCase()}</span>
-            <span className="text-[11px] font-black text-[#44546f] opacity-60 tracking-wider">{item.originSheet}</span>
+            <span className="text-[11px] font-black text-[#44546f] opacity-60 tracking-wider">{normalizeOriginLabel(item.originSheet)}</span>
           </div>
 
-          <h4 className="font-bold text-base text-[#172b4d] leading-tight break-words">{item.task}</h4>
+          <h4 className="font-bold text-base text-[#172b4d] leading-tight break-words">{normalizeTaskTitle(item.task)}</h4>
 
           {item.scenario && <p className="text-xs text-[#44546f] line-clamp-2 leading-relaxed opacity-80 italic">{item.scenario}</p>}
 

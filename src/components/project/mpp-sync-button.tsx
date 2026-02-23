@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 
 interface MppSyncButtonProps {
   localProjectId: string
+  syncMode?: 'append' | 'upsert' | 'replace'
   onSynced?: () => Promise<void> | void
   variant?: 'default' | 'outline'
   label?: string
@@ -15,6 +16,7 @@ interface MppSyncButtonProps {
 
 export function MppSyncButton({
   localProjectId,
+  syncMode = 'upsert',
   onSynced,
   variant = 'outline',
   label = 'Sincronizar MPP',
@@ -39,6 +41,7 @@ export function MppSyncButton({
         body: JSON.stringify({
           mppProjectId: String(context.mppProjectId),
           localProjectId,
+          syncMode,
         }),
       })
       const result = await syncResponse.json()

@@ -1,7 +1,7 @@
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
-import { KanbanBoard } from '@/components/dashboard/kanban-board'
-import { prisma } from '@/lib/prisma'
+import { getKanbanItems } from '@/app/actions/kanban'
+import { ProjectKanbanBoard } from '@/components/kanban/project-kanban-board'
 import { ArrowLeft, Trello } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -10,15 +10,7 @@ import { ProjectMppContext } from '@/components/project/project-mpp-context'
 export default async function ProjectKanbanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
-  const items = await prisma.projectItem.findMany({
-    where: { projectId: id },
-    include: {
-      _count: {
-        select: { comments: true },
-      },
-    },
-    orderBy: [{ wbs: 'asc' }, { createdAt: 'asc' }],
-  })
+  const { data: items } = await getKanbanItems(id)
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -44,7 +36,7 @@ export default async function ProjectKanbanPage({ params }: { params: Promise<{ 
           </div>
         </div>
 
-        <KanbanBoard initialItems={items} projectId={id} allowCreate />
+        <ProjectKanbanBoard projectId={id} initialItems={Array.isArray(items) ? (items as any) : []} />
       </div>
     </div>
   )

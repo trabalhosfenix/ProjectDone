@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { syncProjectProgress } from '@/lib/project-progress'
+import { syncStatusAndProgress } from '@/lib/project-item-flow'
 
 /**
  * Buscar todas as tarefas do projeto (sem hierarquia por enquanto)
@@ -87,6 +88,11 @@ export async function createProjectItem(data: {
     })
 
     revalidatePath(`/dashboard/projetos/${data.projectId}/monitorar`)
+    revalidatePath(`/dashboard/projetos/${data.projectId}/cronograma`)
+    revalidatePath(`/dashboard/projetos/${data.projectId}/kanban`)
+    revalidatePath(`/dashboard/projetos/${data.projectId}/acompanhamento/kanban`)
+    revalidatePath(`/dashboard/projetos/${data.projectId}/gantt`)
+    revalidatePath(`/dashboard/projetos/${data.projectId}/situacao`)
     return { success: true, data: item }
   } catch (error) {
     console.error('Erro ao criar tarefa:', error)
@@ -117,27 +123,49 @@ export async function updateProjectItem(
   }>
 ) {
   try {
-    // Buscar item existente para merge de metadata
     const currentItem = await prisma.projectItem.findUnique({
       where: { id },
-      select: { projectId: true, metadata: true }
+      select: { projectId: true, metadata: true, status: true, dateActual: true, dateActualStart: true }
     })
 
     if (!currentItem) {
       return { success: false, error: 'Tarefa não encontrada' }
     }
 
-    const updatedMetadata = {
-      ...(currentItem.metadata as object || {}),
-      ...(data.metadata || {})
+    const shouldSyncFlow = data.status !== undefined || data.metadata !== undefined
+    const flow = shouldSyncFlow
+      ? syncStatusAndProgress({
+          currentStatus: currentItem.status,
+          currentMetadata: currentItem.metadata,
+          patchStatus: data.status,
+          patchMetadata: data.metadata,
+        })
+      : null
+
+    const dataToUpdate: Record<string, unknown> = {
+      ...data,
+    }
+
+    if (flow) {
+      dataToUpdate.status = flow.status
+      dataToUpdate.metadata = flow.metadata
+
+      if (flow.status === 'Em andamento' && !currentItem.dateActualStart && data.dateActualStart === undefined) {
+        dataToUpdate.dateActualStart = new Date()
+      }
+
+      if (flow.status === 'Concluído' && !currentItem.dateActual && data.dateActual === undefined) {
+        dataToUpdate.dateActual = new Date()
+      }
+
+      if (flow.status !== 'Concluído' && currentItem.dateActual && data.dateActual === undefined) {
+        dataToUpdate.dateActual = null
+      }
     }
 
     const item = await prisma.projectItem.update({
       where: { id },
-      data: {
-        ...data,
-        metadata: updatedMetadata
-      }
+      data: dataToUpdate
     })
 
     if (currentItem.projectId) {
@@ -145,6 +173,8 @@ export async function updateProjectItem(
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/monitorar`)
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/cronograma`)
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/kanban`)
+      revalidatePath(`/dashboard/projetos/${currentItem.projectId}/acompanhamento/kanban`)
+      revalidatePath(`/dashboard/projetos/${currentItem.projectId}/gantt`)
       revalidatePath(`/dashboard/projetos/${currentItem.projectId}/situacao`)
     }
 
@@ -191,6 +221,11 @@ export async function deleteProjectItem(id: string) {
 
     if (item?.projectId) {
       revalidatePath(`/dashboard/projetos/${item.projectId}/monitorar`)
+      revalidatePath(`/dashboard/projetos/${item.projectId}/cronograma`)
+      revalidatePath(`/dashboard/projetos/${item.projectId}/kanban`)
+      revalidatePath(`/dashboard/projetos/${item.projectId}/acompanhamento/kanban`)
+      revalidatePath(`/dashboard/projetos/${item.projectId}/gantt`)
+      revalidatePath(`/dashboard/projetos/${item.projectId}/situacao`)
     }
 
     return { success: true }

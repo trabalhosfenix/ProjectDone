@@ -160,7 +160,7 @@ model Project {
   testScenarios   TestScenario[]       // Cenários de Teste Integrado
   documents       ProjectDocument[]    // Documentos do projeto
   cutoverTasks    CutoverTask[]        // Tarefas do Plano de Cutover
-  importedProject ImportedProject?
+  importedProjects ImportedProject[]
 }
 
 // Riscos do Projeto
@@ -302,7 +302,7 @@ model ProjectMember {
 // Motivo: Estrutura muito similar, facilita filtros e dashboard unificado.
 model ProjectItem {
   id             String   @id @default(uuid())
-  externalId     String?  @unique // ID original do Excel para evitar duplicatas
+  externalId     String? // ID original do Excel/MPP para deduplicação por projeto
   wbs            String?  // Código EDT/EAP (ex: 1.1, 1.1.1)
   originSheet    String   // "TNV", "OUTBOUND", "INBOUND", "CRONOGRAMA_IMPORT"
   
@@ -352,6 +352,7 @@ model ProjectItem {
   @@index([status])
   @@index([responsible])
   @@index([projectId])
+  @@unique([projectId, externalId])
 }
 
 model AuditLog {
@@ -674,11 +675,15 @@ model CutoverTask {
 // Entidades auxiliares para importação de cronogramas externos
 model ImportedProject {
   id            String   @id @default(uuid())
-  externalUid   String?  @unique
+  externalUid   String?
+  externalProjectId String?
   name          String?
-  source        String?  // Ex: MPP, XML
+  source        String   @default("MPP") // Ex: MPP, XML, API
+  syncMode      String   @default("upsert") // append | upsert | replace
+  syncStatus    String   @default("idle") // idle | syncing | synced | error
+  lastSyncAt    DateTime?
 
-  projectId     String?  @unique
+  projectId     String?
   project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   importedById  String?
@@ -693,6 +698,11 @@ model ImportedProject {
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@unique([source, externalUid])
+  @@index([projectId])
+  @@index([source])
+  @@index([syncStatus])
 }
 
 model ImportJob {

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { calculateEndDate, calculateDuration, WorkCalendarConfig } from '@/lib/calendar-engine'
+import { syncProjectProgress } from '@/lib/project-progress'
+import { syncStatusAndProgress } from '@/lib/project-item-flow'
 
 export async function PATCH(
   request: Request,
@@ -39,14 +41,32 @@ export async function PATCH(
 
     // Dados a atualizar
     const dataToUpdate: any = {}
-    
-    // Merge metadata
-    const existingMetadata = (item.metadata as any) || {}
-    if (body.metadata) {
-        dataToUpdate.metadata = { ...existingMetadata, ...body.metadata }
+
+    const shouldSyncFlow = body.status !== undefined || body.metadata !== undefined
+    if (shouldSyncFlow) {
+      const flow = syncStatusAndProgress({
+        currentStatus: item.status,
+        currentMetadata: item.metadata,
+        patchStatus: body.status,
+        patchMetadata: body.metadata,
+      })
+
+      dataToUpdate.status = flow.status
+      dataToUpdate.metadata = flow.metadata
+
+      if (flow.status === 'Em andamento' && !item.dateActualStart && body.dateActualStart === undefined) {
+        dataToUpdate.dateActualStart = new Date()
+      }
+
+      if (flow.status === 'Concluído' && !item.dateActual && body.dateActual === undefined) {
+        dataToUpdate.dateActual = new Date()
+      }
+
+      if (flow.status !== 'Concluído' && item.dateActual && body.dateActual === undefined) {
+        dataToUpdate.dateActual = null
+      }
     }
 
-    if (body.status !== undefined) dataToUpdate.status = body.status
     if (body.responsible !== undefined) dataToUpdate.responsible = body.responsible
     if (body.dateActual) dataToUpdate.dateActual = new Date(body.dateActual)
     if (body.dateActualStart) dataToUpdate.dateActualStart = new Date(body.dateActualStart)
@@ -80,6 +100,13 @@ export async function PATCH(
       where: { id: itemId },
       data: dataToUpdate
     })
+    await syncProjectProgress(id)
+
+    revalidatePath(`/dashboard/projetos/${id}/cronograma`)
+    revalidatePath(`/dashboard/projetos/${id}/gantt`)
+    revalidatePath(`/dashboard/projetos/${id}/kanban`)
+    revalidatePath(`/dashboard/projetos/${id}/acompanhamento/kanban`)
+    revalidatePath(`/dashboard/projetos/${id}/situacao`)
 
     return NextResponse.json({ success: true, data: updated })
   } catch (error) {

@@ -1,206 +1,49 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
-import { Calendar, Filter, RefreshCw, Search } from 'lucide-react'
+import { Calendar, Filter, Search, Palette } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProjectPageHeader } from "@/components/project/project-page-header"
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ProjectMppContext } from '@/components/project/project-mpp-context'
-
-interface RawGanttTask {
-  id?: string
-  uid?: string | number
-  task?: string
-  name?: string
-  wbs?: string
-  start?: string | null
-  finish?: string | null
-  end?: string | null
-  datePlanned?: string | null
-  datePlannedEnd?: string | null
-  percent_complete?: number
-  metadata?: { progress?: number }
-  dependencies?: unknown
-  responsible?: string
-  status?: string
-  outline_level?: number
-  is_summary?: boolean
-}
-
-const toIsoDate = (value?: string | null) => {
-  if (!value) return null
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return null
-  return parsed.toISOString().slice(0, 10)
-}
-
-const normalizeDependencies = (value: unknown) => {
-  if (!value) return ''
-  if (typeof value === 'string') return value
-
-  if (Array.isArray(value)) {
-    const depIds = value
-      .map((dep) => {
-        if (typeof dep === 'string' || typeof dep === 'number') return String(dep)
-        if (dep && typeof dep === 'object') {
-          const maybe = dep as Record<string, unknown>
-          return String(maybe.id || maybe.predecessor_id || maybe.predecessorId || '').trim()
-        }
-        return ''
-      })
-      .filter(Boolean)
-
-    return depIds.join(',')
-  }
-
-  return ''
-}
+import { Button } from '@/components/ui/button'
 
 export default function GanttPage() {
   const params = useParams()
-  const searchParams = useSearchParams()
   const projectId = params.id as string
-  const searchParamsKey = searchParams.toString()
   
   const [tasks, setTasks] = useState<GanttSplitTask[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'Day' | 'Week' | 'Month' | 'Year'>('Week')
+  const [ganttTheme, setGanttTheme] = useState<'light' | 'dark'>('light')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [responsibleFilter, setResponsibleFilter] = useState('all')
   const [hideSummary, setHideSummary] = useState(false)
-  const [linkedMppProjectId, setLinkedMppProjectId] = useState<string | null>(null)
-  const [syncing, setSyncing] = useState(false)
+  const [pageSize, setPageSize] = useState<'50' | '100' | '200' | 'all'>('100')
+  const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
     loadTasks()
-  }, [projectId, searchParamsKey])
+  }, [projectId])
   
 
   const loadTasks = async () => {
     try {
-      const mppProjectIdFromQuery = searchParams.get('mppProjectId')
-      const contextMppProjectId = await (async () => {
-        try {
-          const contextResponse = await fetch(`/api/mpp/project-context/${projectId}`, { cache: 'no-store' })
-          if (!contextResponse.ok) return undefined
-          const context = await contextResponse.json()
-          const mppId = context?.mppProjectId ? String(context.mppProjectId) : undefined
-          return mppId
-        } catch {
-          return undefined
-        }
-      })()
-
-      const mappedMppProjectId = (() => {
-        try {
-          const map = JSON.parse(sessionStorage.getItem('mppProjectMap') || '{}')
-          return map?.[projectId] as string | undefined
-        } catch {
-          return undefined
-        }
-      })()
-
-      const candidateProjectIds = Array.from(
-        new Set([
-          mppProjectIdFromQuery,
-          contextMppProjectId,
-          mappedMppProjectId,
-          projectId,
-        ].filter(Boolean) as string[])
-      )
-
-      let data: any = null
-      let lastError: Error | null = null
-
-      for (const candidateId of candidateProjectIds) {
-        try {
-          const res = await fetch(`/api/mpp/projects/${candidateId}/gantt`, { cache: 'no-store' })
-          if (!res.ok) {
-            const body = await res.text()
-            throw new Error(`HTTP ${res.status} - ${body}`)
-          }
-          data = await res.json()
-          break
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error))
-        }
+      const res = await fetch(`/api/projects/${projectId}/gantt`, { cache: 'no-store' })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`HTTP ${res.status} - ${body}`)
       }
-
-      if (!data) {
-        throw lastError || new Error('Não foi possível buscar dados de Gantt')
-      }
-
-      const sourceTasks: RawGanttTask[] = data?.data || data?.items || data?.tasks || []
-
-      const normalized = sourceTasks.map((item, index) => {
-        const start = toIsoDate(item.datePlanned || item.start)
-        const end = toIsoDate(item.datePlannedEnd || item.finish || item.end)
-        const progress = item.metadata?.progress ?? item.percent_complete ?? 0
-
-        return {
-          id: String(item.id || item.uid || `task-${index}`),
-          name: item.task || item.name || 'Sem nome',
-          wbs: item.wbs,
-          start,
-          end,
-          progress: typeof progress === 'number' ? (progress > 1 ? progress : progress * 100) : 0,
-          dependencies: normalizeDependencies(item.dependencies),
-          responsible: item.responsible,
-          statusLabel: item.status,
-          outline_level: item.outline_level,
-          is_summary: item.is_summary,
-        }
-      })
-
-      const datedTasks = normalized.filter((item) => item.start && item.end)
-      const datedStarts = datedTasks.map((task) => new Date(task.start as string).getTime())
-      const datedEnds = datedTasks.map((task) => new Date(task.end as string).getTime())
-
-      const fallbackStart =
-        datedStarts.length > 0 ? new Date(Math.min(...datedStarts)).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
-      const fallbackEnd =
-        datedEnds.length > 0 ? new Date(Math.max(...datedEnds)).toISOString().slice(0, 10) : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-
-      const ganttTasks = normalized
-        .map((item, index) => {
-          const syntheticStart = new Date(new Date(fallbackStart).getTime() + index * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-          const syntheticEnd = new Date(new Date(syntheticStart).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-
-          const start = item.start || item.end || syntheticStart
-          const end = item.end || item.start || syntheticEnd
-
-          if (!start || !end) {
-            return null
-          }
-
-          return {
-            id: item.id,
-            name: item.name,
-            start,
-            end,
-            progress: Math.max(0, Math.min(100, item.progress)),
-            dependencies: item.dependencies,
-            wbs: item.wbs,
-            responsible: item.responsible,
-            statusLabel: item.statusLabel,
-          }
-        })
-        .filter((item): item is GanttSplitTask => Boolean(item))
-
-      setTasks(ganttTasks)
-
-      if (!linkedMppProjectId && candidateProjectIds.length > 0) {
-        const best = candidateProjectIds.find((id) => id !== projectId) || candidateProjectIds[0]
-        setLinkedMppProjectId(best)
-      }
+      const data = await res.json()
+      setTasks(Array.isArray(data?.data) ? (data.data as GanttSplitTask[]) : [])
     } catch (e) {
       console.error('Erro ao carregar tarefas:', e)
       toast.error('Erro ao carregar cronograma')
@@ -246,18 +89,54 @@ export default function GanttPage() {
     })
   }, [tasks, hideSummary, search, responsibleFilter, statusFilter])
 
+  const totalPages = useMemo(() => {
+    if (pageSize === 'all') return 1
+    const size = Number(pageSize)
+    if (!Number.isFinite(size) || size <= 0) return 1
+    return Math.max(1, Math.ceil(filteredTasks.length / size))
+  }, [filteredTasks.length, pageSize])
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages)
+    }
+  }, [currentPage, totalPages])
+
+  const visibleTasks = useMemo(() => {
+    if (pageSize === 'all') return filteredTasks
+    const size = Number(pageSize)
+    if (!Number.isFinite(size) || size <= 0) return filteredTasks
+    const start = (currentPage - 1) * size
+    return filteredTasks.slice(start, start + size)
+  }, [filteredTasks, pageSize, currentPage])
+
   const handleTaskClick = (task: any) => {
     toast.info(`Tarefa: ${task.name}`)
   }
 
-  const handleDateChange = async (task: any, start: Date, end: Date) => {
+  const parseGanttDate = (value: unknown) => {
+    if (value instanceof Date) return value
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value)
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+    return null
+  }
+
+  const handleDateChange = async (task: any, start: unknown, end: unknown) => {
     try {
+      const parsedStart = parseGanttDate(start)
+      const parsedEnd = parseGanttDate(end)
+      if (!parsedStart || !parsedEnd) {
+        throw new Error('Datas inválidas recebidas do gráfico')
+      }
+
       await fetch(`/api/projects/${projectId}/items/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          datePlanned: start.toISOString(),
-          datePlannedEnd: end.toISOString()
+          datePlanned: parsedStart.toISOString(),
+          datePlannedEnd: parsedEnd.toISOString()
         })
       })
       toast.success('Datas atualizadas!')
@@ -271,44 +150,14 @@ export default function GanttPage() {
       await fetch(`/api/projects/${projectId}/items/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ progress })
+        body: JSON.stringify({
+          metadata: { progress: progress / 100 },
+          status: progress >= 100 ? 'Concluído' : undefined,
+        })
       })
       toast.success('Progresso atualizado!')
     } catch (e) {
       toast.error('Erro ao atualizar progresso')
-    }
-  }
-
-  const handleSyncNow = async () => {
-    const mppProjectId = linkedMppProjectId || searchParams.get('mppProjectId')
-
-    if (!mppProjectId) {
-      toast.error('Projeto MPP não vinculado para sincronização')
-      return
-    }
-
-    try {
-      setSyncing(true)
-      const response = await fetch('/api/mpp/sync-project', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mppProjectId,
-          localProjectId: projectId,
-        }),
-      })
-      const result = await response.json()
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Falha ao sincronizar projeto')
-      }
-
-      toast.success(`Sincronização concluída (${result.importedTasks || 0} tarefas atualizadas)`)
-      await loadTasks()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Falha ao sincronizar projeto')
-    } finally {
-      setSyncing(false)
     }
   }
 
@@ -325,15 +174,6 @@ export default function GanttPage() {
         >
           <div className="flex items-center gap-2">
             <ProjectMppContext projectId={projectId} compact onSynced={loadTasks} />
-            <button
-              onClick={handleSyncNow}
-              disabled={syncing}
-              className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-              title="Sincronizar tarefas do cronograma com o projeto local"
-            >
-              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Sincronizando...' : 'Sincronizar'}
-            </button>
             <Select value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
               <SelectTrigger className="w-[150px]">
                 <Calendar className="w-4 h-4 mr-2" />
@@ -346,6 +186,16 @@ export default function GanttPage() {
                 <SelectItem value="Year">Ano</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={ganttTheme} onValueChange={(v: 'light' | 'dark') => setGanttTheme(v)}>
+              <SelectTrigger className="w-[150px]">
+                <Palette className="w-4 h-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">Tema Claro</SelectItem>
+                <SelectItem value="dark">Tema Escuro</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </ProjectPageHeader>
 
@@ -354,7 +204,7 @@ export default function GanttPage() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
                 Cronograma Visual
-                <Badge variant="secondary">{filteredTasks.length} tarefas</Badge>
+                <Badge variant="secondary">{visibleTasks.length} de {filteredTasks.length} tarefas</Badge>
               </CardTitle>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-2 w-full lg:w-auto">
@@ -393,6 +243,24 @@ export default function GanttPage() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                <Select
+                  value={pageSize}
+                  onValueChange={(value: '50' | '100' | '200' | 'all') => {
+                    setPageSize(value)
+                    setCurrentPage(1)
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Linhas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="50">50 por página</SelectItem>
+                    <SelectItem value="100">100 por página</SelectItem>
+                    <SelectItem value="200">200 por página</SelectItem>
+                    <SelectItem value="all">Todas</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </CardHeader>
@@ -403,8 +271,9 @@ export default function GanttPage() {
               </div>
             ) : (
               <GanttSplitView
-                tasks={filteredTasks}
+                tasks={visibleTasks}
                 viewMode={viewMode}
+                theme={ganttTheme}
                 onTaskClick={handleTaskClick}
                 onDateChange={handleDateChange}
                 onProgressChange={handleProgressChange}
@@ -416,6 +285,39 @@ export default function GanttPage() {
         <div className="mt-4 text-sm text-gray-500 flex items-center gap-2">
           <input id="hide-summary" type="checkbox" checked={hideSummary} onChange={(e) => setHideSummary(e.target.checked)} />
           <label htmlFor="hide-summary">Ocultar tarefas de resumo para focar nas entregas executáveis</label>
+        </div>
+        {pageSize !== 'all' && filteredTasks.length > 0 && (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="text-xs text-gray-500">
+              Página {currentPage} de {totalPages}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              >
+                Anterior
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              >
+                Próxima
+              </Button>
+            </div>
+          </div>
+        )}
+        {pageSize !== 'all' && filteredTasks.length > visibleTasks.length && (
+          <div className="mt-2 text-xs text-amber-700">
+            Exibindo apenas {visibleTasks.length} tarefas. Ajuste o filtro de linhas para ver todas.
+          </div>
+        )}
+        <div className="mt-1 text-xs text-gray-500">
+          Dica: use botão do meio do mouse ou Shift + arraste para mover a área horizontalmente.
         </div>
       </div>
     </div>
