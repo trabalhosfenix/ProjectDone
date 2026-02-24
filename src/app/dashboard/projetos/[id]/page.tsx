@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import { getProjectDetails } from '@/app/actions/project-details'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
@@ -7,6 +8,10 @@ import { ProjectControlPanel } from '@/components/project/project-control-panel'
 import { ProjectControlInfo } from '@/components/project/project-control-info'
 import { ProjectRecords } from '@/components/project/project-records'
 import { ProjectSetup } from '@/components/project/project-setup'
+import { CurvaSChart } from '@/components/dashboard/curva-s'
+import { Button } from '@/components/ui/button'
+import { Activity } from 'lucide-react'
+import { calculateCurvaS } from '@/lib/dashboard-calculations'
 import { prisma } from '@/lib/prisma'
 
 interface ProjectDetailPageProps {
@@ -41,6 +46,16 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
     )
   }
 
+  const curvaItems = await prisma.projectItem.findMany({
+    where: { projectId: id },
+    select: {
+      datePlanned: true,
+      dateActual: true,
+    },
+  })
+
+  const curvaSData = calculateCurvaS(curvaItems)
+
   return (
     <div className="flex flex-col h-full bg-gray-50">
       {/* Abas de Navegação */}
@@ -48,6 +63,15 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
       
       {/* Menu Horizontal */}
       <ProjectHorizontalMenu projectId={id} />
+
+      <div className="bg-white border-b border-gray-200 px-6 py-3 flex justify-end">
+        <Link href={`/dashboard/projetos/${id}/monitorar`}>
+          <Button variant="outline" className="gap-2">
+            <Activity className="w-4 h-4" />
+            Monitorar
+          </Button>
+        </Link>
+      </div>
       
       {/* Conteúdo Principal */}
       <div className="flex flex-1 overflow-hidden">
@@ -57,6 +81,21 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
             project={project}
             members={[]} // TODO: Implementar membros do projeto
           />
+
+          <div className="border-t border-gray-200 bg-white p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Curva S do Projeto</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Evolução acumulada do planejado versus realizado.
+            </p>
+
+            {curvaSData.length > 0 ? (
+              <CurvaSChart data={curvaSData} />
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+                Sem dados de datas para representar a Curva S.
+              </div>
+            )}
+          </div>
           
           {/* Registros do Projeto */}
           <div className="border-t border-gray-200 bg-white p-6">

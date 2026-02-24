@@ -3,19 +3,13 @@
 import { prisma } from "@/lib/prisma";
 import { startOfDay, endOfDay, format, eachDayOfInterval, min, max, isBefore, isSameDay } from "date-fns";
 import { buildProjectScope, requireAuth } from "@/lib/access-control";
+import { buildProjectItemScope } from "@/lib/access-scopes";
 
 export async function getDashboardStats() {
   try {
     const currentUser = await requireAuth()
-    const isAdmin = currentUser.role === "ADMIN"
-    const projectScope = buildProjectScope(currentUser)
     const items = await prisma.projectItem.findMany({
-      where: isAdmin
-        ? (currentUser.tenantId ? { tenantId: currentUser.tenantId } : undefined)
-        : {
-            ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
-            project: { is: projectScope },
-          },
+      where: buildProjectItemScope(currentUser),
     });
     
     const total = items.length;
@@ -62,19 +56,12 @@ export async function getDashboardStats() {
 export async function getCurvaSData() {
   try {
     const currentUser = await requireAuth()
-    const isAdmin = currentUser.role === "ADMIN"
-    const projectScope = buildProjectScope(currentUser)
+    const itemScope = buildProjectItemScope(currentUser)
     const items = await prisma.projectItem.findMany({
-      where: isAdmin
-        ? {
-            ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
-            OR: [{ datePlanned: { not: null } }, { dateActual: { not: null } }],
-          }
-        : {
-            ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
-            project: { is: projectScope },
-            OR: [{ datePlanned: { not: null } }, { dateActual: { not: null } }],
-          },
+      where: {
+        ...(itemScope || {}),
+        OR: [{ datePlanned: { not: null } }, { dateActual: { not: null } }],
+      },
       orderBy: { datePlanned: "asc" }
     });
 

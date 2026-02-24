@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Check, X, Palette, Settings2, Shield } from "lucide-react";
+import { Plus, Trash2, Palette, Settings2, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
 import { getStatusOptions, createStatusOption, deleteStatusOption } from "@/app/actions/items";
-import { RoleManagement } from "./role-management";
 import { ProjectTypesManager } from "./project-types-manager";
 import UserManagement from "./user-management";
 import { TenantManagement } from "./tenant-management";
@@ -72,9 +71,15 @@ export function SystemSettings() {
       <div className="space-y-4">
         <h3 className="text-lg font-black text-[#094160] uppercase tracking-wider flex items-center gap-2">
             <Shield className="w-5 h-5 text-blue-500" />
-            Níveis de Acesso e Permissões
+            Perfis de Acesso
         </h3>
-        <RoleManagement />
+        <Card className="border-none shadow-sm">
+          <CardContent className="pt-6">
+            <p className="text-sm text-gray-600">
+              A gestão de perfis e permissões foi consolidada na guia <span className="font-semibold">Perfis</span>.
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="h-px bg-gray-100 my-8" />

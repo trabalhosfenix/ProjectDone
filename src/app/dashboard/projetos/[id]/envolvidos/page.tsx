@@ -1,10 +1,7 @@
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
 import { ProjectMembersList } from '@/components/project/project-members-list'
-import { getProjectMembers } from '@/app/actions/project-members'
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
+import { getAvailableProjectUsers, getProjectMembers } from '@/app/actions/project-members'
 
 import { ProjectPageHeader } from '@/components/project/project-page-header'
 
@@ -12,7 +9,10 @@ import { ProjectPageHeader } from '@/components/project/project-page-header'
 
 export default async function EnvolvidosPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const { data: members } = await getProjectMembers(id)
+  const [{ data: members }, { data: availableUsers }] = await Promise.all([
+    getProjectMembers(id),
+    getAvailableProjectUsers(id),
+  ])
 
   return (
     <div className="h-full bg-gray-50 flex flex-col">
@@ -26,7 +26,7 @@ export default async function EnvolvidosPage({ params }: { params: Promise<{ id:
           projectId={id}
         />
 
-        <ProjectMembersList projectId={id} members={members || []} />
+        <ProjectMembersList projectId={id} members={members || []} availableUsers={availableUsers || []} />
       </div>
     </div>
   )
