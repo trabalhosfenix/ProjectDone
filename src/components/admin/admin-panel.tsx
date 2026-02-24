@@ -5,7 +5,7 @@
 // src/components/admin/admin-panel.tsx
 
 import { useState } from "react";
-import { Users, LayoutDashboard, Database, Settings, LogOut, Trello, Activity, Layout, FolderOpen, LayoutGrid, ZoomIn, ZoomOut, Type, Shield, ChevronLeft, ChevronRight, Menu, X } from "lucide-react";
+import { Users, LayoutDashboard, Database, Settings, LogOut, Trello, Activity, Layout, FolderOpen, LayoutGrid, ZoomIn, ZoomOut, Type, Shield, ChevronLeft, ChevronRight, Menu, X, UserCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ExcelUpload } from "@/components/excel-upload";
 import { ProjectDataTable } from "@/components/project-data-table";
@@ -39,7 +39,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RolesManagement } from "@/components/admin/roles-management";
 
 import { ProjectList } from "@/components/admin/project-list";
-import { UserHeaderButton } from "@/components/user/user-header-button";
 
 import Link from "next/link";
 
@@ -112,6 +111,8 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
     { id: "data", label: "Base de Dados", icon: Database },
 
     { id: "settings", label: "Configurações", icon: Settings },
+
+    { id: "minha-conta", label: "Minha Conta", icon: UserCircle2, isLink: true, href: "/dashboard/minha-conta" },
 
   ];
 
@@ -300,22 +301,34 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
 
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
               {visibleMenuItems.map((item: any) => (
-                <button
-                  key={`mobile-${item.id}`}
-                  onClick={() => {
-                    setActiveTab(item.id as any);
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all text-left",
-                    activeTab === item.id
-                      ? "bg-white text-[#094160] font-bold shadow-lg"
-                      : "hover:bg-[#0d5a85] text-blue-100"
-                  )}
-                >
-                  <item.icon className="w-5 h-5" />
-                  <span className="font-medium">{item.label}</span>
-                </button>
+                item.isLink && item.href ? (
+                  <Link
+                    key={`mobile-${item.id}`}
+                    href={item.href}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all text-left hover:bg-[#0d5a85] text-blue-100"
+                  >
+                    <item.icon className="w-5 h-5" />
+                    <span className="font-medium">{item.label}</span>
+                  </Link>
+                ) : (
+                  <button
+                    key={`mobile-${item.id}`}
+                    onClick={() => {
+                      setActiveTab(item.id as any);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all text-left",
+                      activeTab === item.id
+                        ? "bg-white text-[#094160] font-bold shadow-lg"
+                        : "hover:bg-[#0d5a85] text-blue-100"
+                    )}
+                  >
+                    <item.icon className="w-5 h-5" />
+                    <span className="font-medium">{item.label}</span>
+                  </button>
+                )
               ))}
             </nav>
 
@@ -345,7 +358,6 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
              <Menu className="w-5 h-5" />
            </button>
            <div className="flex items-center gap-3 md:gap-5 p-2 bg-gray-50 rounded-full border border-gray-200 ml-auto overflow-x-auto">
-             <UserHeaderButton compact />
              <div className="hidden sm:flex items-center gap-3 px-4 border-r border-gray-200">
                 <Type className="w-4 h-4 text-[#094160]" />
                 <span className="text-[11px] font-bold text-[#094160] uppercase tracking-wider">Ajuste Visual</span>
