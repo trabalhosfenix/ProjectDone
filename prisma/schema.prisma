@@ -7,7 +7,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")  // Isso ainda funciona no Prisma 7
+  url      = env("DATABASE_URL")  
 }
 
 model Tenant {

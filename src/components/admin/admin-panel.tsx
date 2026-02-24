@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { ExcelUpload } from "@/components/excel-upload";
 import { ProjectDataTable } from "@/components/project-data-table";
 
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 
 import { KPISection } from "@/components/dashboard/kpi-section";
 
@@ -40,7 +40,7 @@ import { RolesManagement } from "@/components/admin/roles-management";
 
 import { ProjectList } from "@/components/admin/project-list";
 
-import Link from "next/link";
+import { NavigationShell, type NavigationSections } from "@/components/navigation/navigation-shell";
 
 
 
@@ -66,31 +66,10 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
   const [selectedProject, setSelectedProject] = useState("Geral");
 
   const [fontScale, setFontScale] = useState(1);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false
-
-    return localStorage.getItem("sidebar-collapsed") === "true"
-
-  });
 
 
 
   const projectNames = Array.from(new Set(initialItems.map(i => i.originSheet))).filter(Boolean);
-
-
-
-  const toggleSidebar = () => {
-
-    const next = !isSidebarCollapsed
-
-    setIsSidebarCollapsed(next)
-
-    localStorage.setItem("sidebar-collapsed", String(next))
-
-  }
-
-
 
   const menuItems = [
 
@@ -115,162 +94,44 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
     { id: "minha-conta", label: "Minha Conta", icon: UserCircle2, isLink: true, href: "/dashboard/minha-conta" },
 
   ];
+  const sections: NavigationSections = {
+    global: menuItems.map((item: any) => ({
+      id: item.id,
+      label: item.label,
+      icon: item.icon,
+      href: item.href,
+      onClick: item.href ? undefined : () => setActiveTab(item.id as any),
+      permissionKey: item.id
+    })),
+    project: [],
+    common: [{ id: "minha-conta", label: "Minha Conta", icon: UserCircle2, href: "/dashboard/minha-conta" }]
+  };
 
 
 
-  const visibleMenuItems = menuItems.filter((item: any) => {
-    const isMaster = (session?.user as any)?.role === "ADMIN";
-    const userPermissions = (session?.user as any)?.permissions;
-    return isMaster || userPermissions?.[item.id] === true;
-  });
+
 
   return (
-    <div className="flex min-h-screen bg-gray-50 text-[#094160] font-montserrat">
-      {/* Sidebar */}
-
-      <aside className={cn("bg-[#094160] text-white hidden md:flex flex-col transition-all duration-300 relative", isSidebarCollapsed ? "w-20" : "w-72")}>
-
-        <button
-
-          onClick={toggleSidebar}
-
-          className="absolute -right-3 top-9 bg-white text-[#094160] border border-gray-200 rounded-full p-1 shadow-md hover:bg-gray-100 transition-colors z-50"
-
-        >
-
-          {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-
-        </button>
-
-        <div className={cn("p-6 border-b border-[#0d5a85] overflow-hidden whitespace-nowrap", isSidebarCollapsed && "px-4")}>
-
-          {isSidebarCollapsed ? (
-
-            <div className="flex justify-center">
-
-              <h1 className="text-xl font-bold">PD</h1>
-
-            </div>
-
-          ) : (
-
-            <>
-
-              <h1 className="text-2xl font-bold">ProjectDone</h1>
-
-              <p className="text-[12px] text-blue-200 tracking-widest uppercase font-semibold">Sistema de Gestão</p>
-
-            </>
-
-          )}
-
-        </div>
-
-        
-
-        <nav className="flex-1 p-5 space-y-3">
-          {visibleMenuItems.map((item: any) => {
-
-
-            // Se for um link, renderiza como Link
-
-            if (item.isLink && item.href) {
-
-              return (
-
-                <Link
-
-                  key={item.id}
-
-                  href={item.href}
-
-                  className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-xl text-sm transition-all text-left hover:bg-[#0d5a85] text-blue-100 hover:scale-[1.02]", isSidebarCollapsed && "justify-center px-2")}
-
-                >
-
-                  <item.icon className="w-5 h-5" />
-
-                  {!isSidebarCollapsed && <span className="font-medium">{item.label}</span>}
-
-                </Link>
-
-              );
-
-            }
-
-
-
-            // Senão, renderiza como botão
-
-            return (
-
-                <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id as any);
-                  setIsMobileMenuOpen(false);
-                }}
-                className={cn(
-                    "w-full flex items-center gap-4 px-5 py-4 rounded-xl text-sm transition-all text-left",
-
-                    isSidebarCollapsed && "justify-center px-2",
-
-                    activeTab === item.id 
-
-                    ? "bg-white text-[#094160] font-bold shadow-lg scale-[1.02]" 
-
-                    : "hover:bg-[#0d5a85] text-blue-100 hover:scale-[1.02]"
-
-                )}
-
-                >
-
-                <item.icon className="w-5 h-5" />
-
-                {!isSidebarCollapsed && <span className="font-medium">{item.label}</span>}
-
-                </button>
-
-            );
-
-          })}
-
-        </nav>
-
-
-
-        <div className="p-5 border-t border-[#0d5a85] overflow-hidden">
-
-          {isSidebarCollapsed ? (
-
-            <button
-
-              onClick={() => signOut({ callbackUrl: "/" })}
-
-              className="w-full flex items-center justify-center p-3 rounded-xl text-sm hover:bg-red-500/20 text-red-200 transition-colors"
-
-              title="Sair"
-
-            >
-
-              <LogOut className="w-5 h-5" />
-
+    <NavigationShell
+      sections={sections}
+      activeItemId={activeTab}
+      role={(session?.user as any)?.role}
+      permissions={(session?.user as any)?.permissions}
+      headerContent={(
+        <div className="flex items-center gap-3 md:gap-5 p-2 bg-gray-50 rounded-full border border-gray-200 ml-auto overflow-x-auto">
+          <div className="hidden sm:flex items-center gap-3 px-4 border-r border-gray-200">
+            <Type className="w-4 h-4 text-[#094160]" />
+            <span className="text-[11px] font-bold text-[#094160] uppercase tracking-wider">Ajuste Visual</span>
+          </div>
+          <div className="flex items-center gap-2 md:gap-3 px-1 md:px-2">
+            <button onClick={() => setFontScale(s => Math.max(0.8, s - 0.05))} className="p-2 hover:bg-white hover:shadow-md rounded-full transition-all text-[#094160]" title="Diminuir">
+              <ZoomOut className="w-5 h-5" />
             </button>
-
-          ) : (
-
-            <button 
-
-              onClick={() => signOut({ callbackUrl: "/" })}
-
-              className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-sm hover:bg-red-500/20 text-red-200 transition-colors text-left"
-
-            >
-
-              <LogOut className="w-5 h-5" />
-
-              Sair do Sistema
-
+            <span className="text-[13px] font-black text-[#094160] w-14 text-center pointer-events-none">
+              {(fontScale * 100).toFixed(0)}%
+            </span>
+            <button onClick={() => setFontScale(s => Math.min(1.4, s + 0.05))} className="p-2 hover:bg-white hover:shadow-md rounded-full transition-all text-[#094160]" title="Aumentar">
+              <ZoomIn className="w-5 h-5" />
             </button>
 
           )}
@@ -345,6 +206,7 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
           </aside>
         </div>
       )}
+    >
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
@@ -710,9 +572,7 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
 
       </div>
 
-      </main>
-
-    </div>
+    </NavigationShell>
 
   );
 

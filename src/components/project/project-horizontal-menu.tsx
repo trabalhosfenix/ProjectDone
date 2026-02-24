@@ -107,4 +107,3 @@ export function ProjectHorizontalMenu({ projectId }: ProjectHorizontalMenuProps)
     </div>
   )
 }
-

@@ -29,15 +29,63 @@ export async function getProjectMembers(projectId: string) {
   }
 }
 
+export async function getAvailableProjectUsers(projectId: string) {
+  try {
+    const { project, user: currentUser } = await requireProjectAccess(projectId)
+    const expectedTenantId = project.tenantId || currentUser.tenantId || null
+
+    const existingMembers = await prisma.projectMember.findMany({
+      where: { projectId },
+      select: { userId: true },
+    })
+
+    const existingUserIds = existingMembers.map((member) => member.userId)
+
+    const users = await prisma.user.findMany({
+      where: {
+        ...(expectedTenantId ? { tenantId: expectedTenantId } : {}),
+        ...(existingUserIds.length > 0 ? { id: { notIn: existingUserIds } } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+      orderBy: [
+        { name: 'asc' },
+        { email: 'asc' },
+      ],
+    })
+
+    return { success: true, data: users }
+  } catch (error) {
+    console.error('Erro ao buscar usuários elegíveis para o projeto:', error)
+    return { success: false, error: 'Falha ao carregar usuários disponíveis' }
+  }
+}
+
 export async function addProjectMember(projectId: string, email: string, role: string) {
   try {
     const { project, user: currentUser } = await requireProjectAccess(projectId)
+    const normalizedEmail = email.trim().toLowerCase()
+    const expectedTenantId = project.tenantId || currentUser.tenantId || null
+
     const user = await prisma.user.findUnique({
-      where: { email }
+      where: {
+        email: normalizedEmail,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+      }
     })
 
     if (!user) {
       return { success: false, error: 'Usuário não encontrado com este email' }
+    }
+
+    if (expectedTenantId && user.tenantId !== expectedTenantId) {
+      return { success: false, error: 'Somente usuários da mesma conta (tenant) podem ser vinculados ao projeto' }
     }
 
     const existingMember = await prisma.projectMember.findUnique({

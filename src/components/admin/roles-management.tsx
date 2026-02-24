@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getRolesWithUserCount, createRole, updateRolePermissions, deleteRole } from "@/app/actions/permissions";
+import { getRolesWithUserCount, createRole, updateRole, deleteRole } from "@/app/actions/permissions";
 import { Shield, Users, Plus, Edit, Trash2, X, Save } from "lucide-react";
+import { toast } from "sonner";
 
 const PERMISSION_GROUPS = {
   "Acesso Básico": {
+    projetos: "Acessar Projetos",
     dashboard: "Acessar Dashboard",
     kanban: "Acessar Kanban",
     portfolio: "Acessar Portfólio",
@@ -18,6 +20,7 @@ const PERMISSION_GROUPS = {
   },
   "Configurações": {
     settings: "Acessar Configurações",
+    perfis: "Acessar Perfis",
   },
   "Gestão de Projetos": {
     canEdit: "Editar Projetos",
@@ -68,19 +71,31 @@ export function RolesManagement() {
 
   const handleSave = async () => {
     if (!formData.name.trim()) {
-      alert("Por favor, informe o nome do perfil.");
+      toast.error("Por favor, informe o nome do perfil.");
       return;
     }
 
     setLoading(true);
 
     if (view === "new") {
-      const result = await createRole(formData.name);
-      if (result.success && result.role) {
-        await updateRolePermissions(result.role.id, formData.permissions);
+      const result = await createRole(formData.name, formData.permissions);
+      if (!result.success) {
+        toast.error(result.error || "Não foi possível criar o perfil.");
+        setLoading(false);
+        return;
       }
+      toast.success("Perfil criado com sucesso.");
     } else if (view === "edit" && selectedRole) {
-      await updateRolePermissions(selectedRole.id, formData.permissions);
+      const result = await updateRole(selectedRole.id, {
+        name: formData.name,
+        permissions: formData.permissions
+      });
+      if (!result.success) {
+        toast.error(result.error || "Não foi possível atualizar o perfil.");
+        setLoading(false);
+        return;
+      }
+      toast.success("Perfil atualizado com sucesso.");
     }
 
     await loadRoles();
@@ -89,7 +104,7 @@ export function RolesManagement() {
 
   const handleDelete = async (role: any) => {
     if (role.userCount > 0) {
-      alert(`Não é possível excluir este perfil pois existem ${role.userCount} usuário(s) vinculado(s).`);
+      toast.error(`Não é possível excluir este perfil pois existem ${role.userCount} usuário(s) vinculado(s).`);
       return;
     }
 
@@ -98,7 +113,13 @@ export function RolesManagement() {
     }
 
     setLoading(true);
-    await deleteRole(role.id);
+    const result = await deleteRole(role.id);
+    if (!result.success) {
+      toast.error(result.error || "Não foi possível excluir o perfil.");
+      setLoading(false);
+      return;
+    }
+    toast.success("Perfil excluído com sucesso.");
     await loadRoles();
   };
 
@@ -145,7 +166,6 @@ export function RolesManagement() {
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
               className="w-full border rounded px-3 py-2"
               placeholder="Ex: Gerente de Projetos"
-              disabled={view === "edit"}
             />
           </div>
 

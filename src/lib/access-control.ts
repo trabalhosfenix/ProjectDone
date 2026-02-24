@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { buildProjectScope as buildProjectScopeFromScopes } from '@/lib/access-scopes'
 
 export class AccessError extends Error {
   status: number
@@ -51,31 +52,7 @@ export async function requireTenantAccess(): Promise<CurrentUser> {
 }
 
 export function buildProjectScope(user: CurrentUser) {
-  const isAdmin = user.role === 'ADMIN'
-
-  if (isAdmin) {
-    if (user.tenantId) {
-      return { tenantId: user.tenantId }
-    }
-    return {}
-  }
-
-  if (user.tenantId) {
-    return {
-      tenantId: user.tenantId,
-      OR: [
-        { createdById: user.id },
-        { members: { some: { userId: user.id } } },
-      ],
-    }
-  }
-
-  return {
-    OR: [
-      { createdById: user.id },
-      { members: { some: { userId: user.id } } },
-    ],
-  }
+  return buildProjectScopeFromScopes(user)
 }
 
 export async function requireProjectAccess(projectId: string, user?: CurrentUser) {
