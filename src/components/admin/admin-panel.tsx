@@ -40,6 +40,7 @@ import { RolesManagement } from "@/components/admin/roles-management";
 
 import { ProjectList } from "@/components/admin/project-list";
 import { UserHeaderButton } from "@/components/user/user-header-button";
+import { canAccessFeature } from "@/lib/access-scopes";
 
 import Link from "next/link";
 
@@ -118,9 +119,9 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
 
 
   const visibleMenuItems = menuItems.filter((item: any) => {
-    const isMaster = (session?.user as any)?.role === "ADMIN";
+    const userRole = (session?.user as any)?.role;
     const userPermissions = (session?.user as any)?.permissions;
-    return isMaster || userPermissions?.[item.id] === true;
+    return canAccessFeature(userRole, userPermissions, item.id);
   });
 
   return (
@@ -211,7 +212,6 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
                 }}
                 className={cn(
                     "w-full flex items-center gap-4 px-5 py-4 rounded-xl text-sm transition-all text-left",
-
                     isSidebarCollapsed && "justify-center px-2",
 
                     activeTab === item.id 
