@@ -2,7 +2,6 @@
 
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
-import { UserHeaderButton } from "@/components/user/user-header-button"
 
 interface ProjectPageHeaderProps {
     title: string
@@ -36,7 +35,6 @@ export function ProjectPageHeader({ title, description, projectId, backLink, chi
             
             {/* Right side actions */}
             <div className="flex items-center gap-4">
-                <UserHeaderButton compact />
                 {children}
             </div>
         </div>
