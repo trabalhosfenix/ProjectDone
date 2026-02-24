@@ -60,6 +60,12 @@ export async function getUsers() {
             slug: true,
           },
         },
+        userRole: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         createdAt: true,
       },
     });
@@ -101,13 +107,33 @@ export async function createUser(formData: CreateUserInput) {
 
     const effectiveTenantId = tenantId || session.user.tenantId || undefined;
 
+    if (!effectiveTenantId) {
+      return { success: false, error: "É obrigatório informar a conta (tenant) do usuário." };
+    }
+
+    const normalizedRoleId = roleId && roleId !== "none" ? roleId : null;
+
+    if (normalizedRoleId) {
+      const role = await prisma.role.findFirst({
+        where: {
+          id: normalizedRoleId,
+          tenantId: effectiveTenantId,
+        },
+        select: { id: true },
+      });
+
+      if (!role) {
+        return { success: false, error: "Perfil selecionado não pertence à conta informada." };
+      }
+    }
+
     await prisma.user.create({
       data: {
         name,
         email,
         password: hashedPassword,
         role: role || "USER",
-        roleId: roleId && roleId !== "none" ? roleId : null,
+        roleId: normalizedRoleId,
         
         // Novos campos
         code,
@@ -184,12 +210,22 @@ export async function seedFirstAdmin() {
 
     if (adminCount === 0) {
       const hashedPassword = await bcrypt.hash("admin123", 10);
+      const firstTenant = await prisma.tenant.findFirst({
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      });
+
+      if (!firstTenant) {
+        return { success: false, message: "Nenhum tenant cadastrado para criar admin inicial." };
+      }
+
       await prisma.user.create({
         data: {
           name: "Administrador",
           email: "admin@empresa.com",
           password: hashedPassword,
-          role: "ADMIN"
+          role: "ADMIN",
+          tenantId: firstTenant.id,
         }
       });
       return { success: true, message: "Admin padrão criado." };
