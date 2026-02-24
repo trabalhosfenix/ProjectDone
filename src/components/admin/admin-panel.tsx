@@ -5,8 +5,7 @@
 // src/components/admin/admin-panel.tsx
 
 import { useState } from "react";
-import { Users, LayoutDashboard, Database, Settings, LogOut, Trello, Activity, Layout, FolderOpen, LayoutGrid, ZoomIn, ZoomOut, Type, Shield, ChevronLeft, ChevronRight, Menu, X, UserCircle2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Users, LayoutDashboard, Database, Settings, Trello, Activity, Layout, FolderOpen, LayoutGrid, ZoomIn, ZoomOut, Type, Shield, UserCircle2 } from "lucide-react";
 import { ExcelUpload } from "@/components/excel-upload";
 import { ProjectDataTable } from "@/components/project-data-table";
 
@@ -91,8 +90,6 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
 
     { id: "settings", label: "Configurações", icon: Settings },
 
-    { id: "minha-conta", label: "Minha Conta", icon: UserCircle2, isLink: true, href: "/dashboard/minha-conta" },
-
   ];
   const sections: NavigationSections = {
     global: menuItems.map((item: any) => ({
@@ -133,148 +130,15 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
             <button onClick={() => setFontScale(s => Math.min(1.4, s + 0.05))} className="p-2 hover:bg-white hover:shadow-md rounded-full transition-all text-[#094160]" title="Aumentar">
               <ZoomIn className="w-5 h-5" />
             </button>
-
-          )}
-
-        </div>
-
-      </aside>
-
-      {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-[60] bg-black/40 md:hidden" onClick={() => setIsMobileMenuOpen(false)}>
-          <aside
-            className="h-full w-72 bg-[#094160] text-white flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-5 border-b border-[#0d5a85] flex items-center justify-between">
-              <div>
-                <h1 className="text-xl font-bold">ProjectDone</h1>
-                <p className="text-[11px] text-blue-200 tracking-widest uppercase font-semibold">Sistema de Gestão</p>
-              </div>
-              <button
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="p-2 rounded-lg hover:bg-[#0d5a85] transition-colors"
-                aria-label="Fechar menu"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-              {visibleMenuItems.map((item: any) => (
-                item.isLink && item.href ? (
-                  <Link
-                    key={`mobile-${item.id}`}
-                    href={item.href}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all text-left hover:bg-[#0d5a85] text-blue-100"
-                  >
-                    <item.icon className="w-5 h-5" />
-                    <span className="font-medium">{item.label}</span>
-                  </Link>
-                ) : (
-                  <button
-                    key={`mobile-${item.id}`}
-                    onClick={() => {
-                      setActiveTab(item.id as any);
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all text-left",
-                      activeTab === item.id
-                        ? "bg-white text-[#094160] font-bold shadow-lg"
-                        : "hover:bg-[#0d5a85] text-blue-100"
-                    )}
-                  >
-                    <item.icon className="w-5 h-5" />
-                    <span className="font-medium">{item.label}</span>
-                  </button>
-                )
-              ))}
-            </nav>
-
-            <div className="p-4 border-t border-[#0d5a85]">
-              <button
-                onClick={() => signOut({ callbackUrl: "/" })}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm hover:bg-red-500/20 text-red-200 transition-colors text-left"
-              >
-                <LogOut className="w-5 h-5" />
-                Sair do Sistema                
-              </button>
-               <span>{session?.user?.email}</span> 
-            </div>
-          </aside>
+            <button onClick={() => setFontScale(1)} className="ml-1 md:ml-2 px-3 md:px-4 py-1.5 text-[10px] font-black bg-[#094160] text-white rounded-full hover:bg-[#0d5a85] transition-colors whitespace-nowrap">
+              PADRÃO
+            </button>
+          </div>
         </div>
       )}
     >
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        {/* Top Header Persistent */}
-        <div className="bg-white border-b border-gray-100 px-4 md:px-10 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm gap-3">
-           <button
-             onClick={() => setIsMobileMenuOpen(true)}
-             className="md:hidden p-2 rounded-lg border border-gray-200 text-[#094160] hover:bg-gray-100"
-             aria-label="Abrir menu"
-           >
-             <Menu className="w-5 h-5" />
-           </button>
-           <div className="flex items-center gap-3 md:gap-5 p-2 bg-gray-50 rounded-full border border-gray-200 ml-auto overflow-x-auto">
-             <div className="hidden sm:flex items-center gap-3 px-4 border-r border-gray-200">
-                <Type className="w-4 h-4 text-[#094160]" />
-                <span className="text-[11px] font-bold text-[#094160] uppercase tracking-wider">Ajuste Visual</span>
-             </div>
-             
-             <div className="flex items-center gap-2 md:gap-3 px-1 md:px-2">
-                <button 
-                   onClick={() => setFontScale(s => Math.max(0.8, s - 0.05))}
-                   className="p-2 hover:bg-white hover:shadow-md rounded-full transition-all text-[#094160]"
-
-                   title="Diminuir"
-
-                >
-
-                   <ZoomOut className="w-5 h-5" />
-
-                </button>
-
-                
-
-                <span className="text-[13px] font-black text-[#094160] w-14 text-center pointer-events-none">
-
-                  {(fontScale * 100).toFixed(0)}%
-
-                </span>
-
-
-
-                <button 
-
-                   onClick={() => setFontScale(s => Math.min(1.4, s + 0.05))}
-
-                   className="p-2 hover:bg-white hover:shadow-md rounded-full transition-all text-[#094160]"
-
-                   title="Aumentar"
-
-                >
-
-                   <ZoomIn className="w-5 h-5" />
-
-                </button>
-
-                
-
-                <button 
-                   onClick={() => setFontScale(1)}
-                   className="ml-1 md:ml-2 px-3 md:px-4 py-1.5 text-[10px] font-black bg-[#094160] text-white rounded-full hover:bg-[#0d5a85] transition-colors whitespace-nowrap"
-                >
-                   PADRÃO
-                </button>
-             </div>
-           </div>
-        </div>
-
-        <div className="p-4 md:p-10 font-montserrat" style={{ zoom: fontScale }}>
+      <div className="p-4 md:p-10 font-montserrat" style={{ zoom: fontScale }}>
         {activeTab === "dashboard" && (
 
           <div className="space-y-10">

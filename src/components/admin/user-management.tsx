@@ -182,11 +182,16 @@ export default function UserManagement() {
                     </div>
                   </TableCell>
                   <TableCell className="text-left">
-                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${
-                      user.role === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {user.role}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold w-fit ${
+                        user.role === 'ADMIN' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {user.role}
+                      </span>
+                      <span className="text-[11px] text-gray-500">
+                        {user.userRole?.name || "Sem perfil customizado"}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell className="text-left">
                     <div className="flex items-center gap-2 text-gray-500">
