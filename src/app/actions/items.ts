@@ -6,20 +6,13 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { syncProjectProgress } from '@/lib/project-progress'
 import { syncStatusAndProgress } from '@/lib/project-item-flow'
-import { buildProjectScope, requireAuth } from "@/lib/access-control";
+import { requireAuth } from "@/lib/access-control";
+import { buildProjectItemScope } from "@/lib/access-scopes";
 
 export async function getProjectItems() {
   try {
     const currentUser = await requireAuth();
-    const isAdmin = currentUser.role === "ADMIN";
-    const projectScope = buildProjectScope(currentUser);
-
-    const where = isAdmin
-      ? (currentUser.tenantId ? { tenantId: currentUser.tenantId } : undefined)
-      : {
-          ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
-          project: { is: projectScope },
-        };
+    const where = buildProjectItemScope(currentUser);
 
     return await prisma.projectItem.findMany({
       where,

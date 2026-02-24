@@ -28,30 +28,57 @@ export async function getRoles() {
   });
 }
 
-export async function createRole(name: string) {
+function normalizeRoleName(name: string) {
+  return name.trim();
+}
+
+export async function createRole(name: string, permissions?: Record<string, boolean>) {
   try {
     const session = await isAdminSession();
     if (!session.isAdmin) return { success: false, error: "Acesso negado." };
+    const normalizedName = normalizeRoleName(name);
+    if (!normalizedName) return { success: false, error: "Nome do perfil é obrigatório." };
+
+    const existingRole = await prisma.role.findFirst({
+      where: {
+        name: normalizedName,
+        ...buildRoleScope(session.tenantId),
+      },
+      select: { id: true },
+    });
+
+    if (existingRole) {
+      return { success: false, error: "Já existe um perfil com este nome." };
+    }
+
+    const defaultPermissions = {
+      projetos: true,
+      dashboard: true,
+      kanban: false,
+      portfolio: false,
+      resources: false,
+      canvas: false,
+      library: false,
+      data: false,
+      settings: false,
+      perfis: false
+    };
 
     const role = await prisma.role.create({
       data: {
-        name,
+        name: normalizedName,
         tenantId: session.tenantId || undefined,
-        permissions: {
-          dashboard: true,
-          kanban: false,
-          portfolio: false,
-          resources: false,
-          canvas: false,
-          library: false,
-          data: false,
-          settings: false
-        }
+        permissions: permissions || defaultPermissions
       }
     });
     revalidatePath("/dashboard");
     return { success: true, role };
-  } catch {
+  } catch (error: unknown) {
+    console.error("Erro ao criar perfil:", error);
+    const code = (error as { code?: string } | null)?.code;
+    if (code === "P2002") {
+      return { success: false, error: "Já existe um perfil com este nome." };
+    }
     return { success: false, error: "Erro ao criar nível." };
   }
 }
@@ -84,6 +111,63 @@ export async function updateRolePermissions(id: string, permissions: Record<stri
   }
 }
 
+export async function updateRole(id: string, data: { name?: string; permissions?: Record<string, boolean> }) {
+  try {
+    const session = await isAdminSession();
+    if (!session.isAdmin) return { success: false, error: "Acesso negado." };
+
+    const role = await prisma.role.findFirst({
+      where: {
+        id,
+        ...buildRoleScope(session.tenantId),
+      },
+      select: { id: true, name: true },
+    });
+
+    if (!role) {
+      return { success: false, error: "Perfil não encontrado." };
+    }
+
+    const nextName = typeof data.name === "string" ? normalizeRoleName(data.name) : undefined;
+    if (nextName !== undefined && !nextName) {
+      return { success: false, error: "Nome do perfil é obrigatório." };
+    }
+
+    if (nextName && nextName !== role.name) {
+      const duplicatedRole = await prisma.role.findFirst({
+        where: {
+          name: nextName,
+          ...buildRoleScope(session.tenantId),
+          NOT: { id: role.id },
+        },
+        select: { id: true },
+      });
+
+      if (duplicatedRole) {
+        return { success: false, error: "Já existe um perfil com este nome." };
+      }
+    }
+
+    await prisma.role.update({
+      where: { id: role.id },
+      data: {
+        ...(nextName !== undefined ? { name: nextName } : {}),
+        ...(data.permissions ? { permissions: data.permissions } : {}),
+      },
+    });
+
+    revalidatePath("/dashboard");
+    return { success: true };
+  } catch (error: unknown) {
+    console.error("Erro ao atualizar perfil:", error);
+    const code = (error as { code?: string } | null)?.code;
+    if (code === "P2002") {
+      return { success: false, error: "Já existe um perfil com este nome." };
+    }
+    return { success: false, error: "Erro ao atualizar perfil." };
+  }
+}
+
 export async function deleteRole(id: string) {
   try {
     const session = await isAdminSession();
@@ -99,6 +183,14 @@ export async function deleteRole(id: string) {
 
     if (!role) {
       return { success: false, error: "Perfil não encontrado." };
+    }
+
+    const usersCount = await prisma.user.count({
+      where: { roleId: role.id },
+    });
+
+    if (usersCount > 0) {
+      return { success: false, error: `Não é possível excluir. ${usersCount} usuário(s) estão usando este perfil.` };
     }
 
     await prisma.role.delete({

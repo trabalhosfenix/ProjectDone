@@ -24,7 +24,7 @@ export function ProjectHorizontalMenu({ projectId }: ProjectHorizontalMenuProps)
         { label: 'Importar MS Project', href: `/dashboard/projetos/${projectId}/importar?type=msproject`, implemented: true },
         { label: 'Exportar Excel', href: `/dashboard/projetos/${projectId}/importar?type=excel&mode=export`, implemented: true },
         { label: 'Exportar MS Project', href: `/dashboard/projetos/${projectId}/importar?type=msproject&mode=export`, implemented: true },
-        { label: 'Dashboard', href: `/dashboard/projetos/${projectId}/relatorios`, implemented: true },
+        { label: 'Dashboard', href: `/dashboard/projetos/${projectId}`, implemented: true },
       ]
     },
     {
@@ -106,4 +106,3 @@ export function ProjectHorizontalMenu({ projectId }: ProjectHorizontalMenuProps)
     </div>
   )
 }
-
