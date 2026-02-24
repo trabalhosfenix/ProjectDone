@@ -27,6 +27,15 @@ until pg_isready -h db -U $POSTGRES_USER -d $POSTGRES_DB; do
 done
 echo "PostgreSQL está pronto!"
 
+# Backfill de tenant para dados legados antes do schema enforcement
+echo "Executando backfill de tenant para dados legados..."
+node ./scripts/backfill-tenant-before-db-push.js
+
+if [ $? -ne 0 ]; then
+  echo "✗ Erro no backfill de tenant"
+  exit 1
+fi
+
 # Executa o Prisma db push com o binário local
 echo "Executando Prisma db push..."
 ./node_modules/.bin/prisma db push --accept-data-loss --schema=./prisma/schema.prisma
