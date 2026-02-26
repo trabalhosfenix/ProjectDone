@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ProjectMppContext } from '@/components/project/project-mpp-context'
 import { Button } from '@/components/ui/button'
+import { TaskEntitySheet } from '@/components/project/task-entity-sheet'
 
 export default function GanttPage() {
   const params = useParams()
@@ -29,6 +30,8 @@ export default function GanttPage() {
   const [hideSummary, setHideSummary] = useState(false)
   const [pageSize, setPageSize] = useState<'50' | '100' | '200' | 'all'>('100')
   const [currentPage, setCurrentPage] = useState(1)
+  const [selectedTask, setSelectedTask] = useState<any | null>(null)
+  const [isTaskSheetOpen, setIsTaskSheetOpen] = useState(false)
 
   useEffect(() => {
     loadTasks()
@@ -111,7 +114,8 @@ export default function GanttPage() {
   }, [filteredTasks, pageSize, currentPage])
 
   const handleTaskClick = (task: any) => {
-    toast.info(`Tarefa: ${task.name}`)
+    setSelectedTask(task)
+    setIsTaskSheetOpen(true)
   }
 
   const parseGanttDate = (value: unknown) => {
@@ -186,6 +190,7 @@ export default function GanttPage() {
                 <SelectItem value="Year">Ano</SelectItem>
               </SelectContent>
             </Select>
+            <Button onClick={() => { setSelectedTask(null); setIsTaskSheetOpen(true) }}>Nova tarefa</Button>
             <Select value={ganttTheme} onValueChange={(v: 'light' | 'dark') => setGanttTheme(v)}>
               <SelectTrigger className="w-[150px]">
                 <Palette className="w-4 h-4 mr-2" />
@@ -320,6 +325,14 @@ export default function GanttPage() {
           Dica: use botão do meio do mouse ou Shift + arraste para mover a área horizontalmente.
         </div>
       </div>
+
+      <TaskEntitySheet
+        open={isTaskSheetOpen}
+        onOpenChange={setIsTaskSheetOpen}
+        projectId={projectId}
+        task={selectedTask}
+        responsibleOptions={responsibleOptions}
+      />
     </div>
   )
 }

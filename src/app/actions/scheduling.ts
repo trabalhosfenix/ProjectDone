@@ -91,28 +91,24 @@ function extractProgress(item: SchedItem): number {
 function consolidateParentProgress(items: SchedItem[]): Map<string, number> {
   const result = new Map<string, number>()
 
+  const getWbsDepth = (wbs: string) => wbs.split('.').filter(Boolean).length
+
   for (const parent of items) {
     if (!parent.wbs) continue
+    const parentDepth = getWbsDepth(parent.wbs)
 
     const children = items.filter((candidate) => {
       if (!candidate.wbs || candidate.id === parent.id) return false
-      return candidate.wbs.startsWith(`${parent.wbs}.`)
+      if (!candidate.wbs.startsWith(`${parent.wbs}.`)) return false
+      return getWbsDepth(candidate.wbs) === parentDepth + 1
     })
 
     if (children.length === 0) continue
 
-    let weightSum = 0
-    let progressSum = 0
+    const progressAvg =
+      children.reduce((sum, child) => sum + extractProgress(child), 0) / children.length
 
-    for (const child of children) {
-      const weight = typeof child.weight === 'number' && child.weight > 0 ? child.weight : 1
-      weightSum += weight
-      progressSum += extractProgress(child) * weight
-    }
-
-    if (weightSum > 0) {
-      result.set(parent.id, Number((progressSum / weightSum).toFixed(4)))
-    }
+    result.set(parent.id, Number(progressAvg.toFixed(4)))
   }
 
   return result
