@@ -20,7 +20,7 @@ interface CurvaSProps {
 export function CurvaSChart({ data }: CurvaSProps) {
   return (
     <div className="h-[350px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
         <AreaChart
           data={data}
           margin={{
