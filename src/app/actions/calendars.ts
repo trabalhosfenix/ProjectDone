@@ -3,6 +3,27 @@
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { requireAuth } from '@/lib/access-control'
+import { recalculateProjectSchedule } from '@/app/actions/scheduling'
+import { hasPermission, PERMISSIONS } from '@/lib/permissions'
+
+async function canManageCalendars() {
+  const user = await requireAuth()
+  const allowed = user.role === 'ADMIN' || await hasPermission(user.id, PERMISSIONS.MANAGE_REGISTERS)
+  return { user, allowed }
+}
+
+async function recalculateProjectsUsingCalendar(calendarId: string, tenantId: string | null) {
+  const projects = await prisma.project.findMany({
+    where: {
+      workCalendarId: calendarId,
+      ...(tenantId ? { tenantId } : {}),
+    },
+    select: { id: true },
+  })
+
+  await Promise.all(projects.map((project) => recalculateProjectSchedule(project.id)))
+  return projects.length
+}
 
 // --- Calendários ---
 
@@ -49,8 +70,8 @@ export async function createCalendar(data: {
   description?: string
 }) {
   try {
-    const user = await requireAuth()
-    if (user.role !== 'ADMIN') return { success: false, error: 'Apenas administradores podem criar calendário' }
+    const { allowed } = await canManageCalendars()
+    if (!allowed) return { success: false, error: 'Sem permissão para criar calendário' }
     const calendar = await prisma.workCalendar.create({
       data
     })
@@ -70,8 +91,8 @@ export async function updateCalendar(id: string, data: {
   isDefault?: boolean
 }) {
   try {
-    const user = await requireAuth()
-    if (user.role !== 'ADMIN') return { success: false, error: 'Apenas administradores podem atualizar calendário' }
+    const { user, allowed } = await canManageCalendars()
+    if (!allowed) return { success: false, error: 'Sem permissão para atualizar calendário' }
     // Se for marcar como default, desmarcar outros
     if (data.isDefault) {
       await prisma.workCalendar.updateMany({
@@ -84,8 +105,9 @@ export async function updateCalendar(id: string, data: {
       where: { id },
       data
     })
+    const recalculated = await recalculateProjectsUsingCalendar(id, user.tenantId)
     revalidatePath('/dashboard/sistema/calendarios')
-    return { success: true, data: calendar }
+    return { success: true, data: calendar, recalculated }
   } catch (error) {
     console.error('Erro ao atualizar calendário:', error)
     return { success: false, error: 'Erro ao atualizar calendário' }
@@ -94,8 +116,20 @@ export async function updateCalendar(id: string, data: {
 
 export async function deleteCalendar(id: string) {
   try {
-    const user = await requireAuth()
-    if (user.role !== 'ADMIN') return { success: false, error: 'Apenas administradores podem excluir calendário' }
+    const { user, allowed } = await canManageCalendars()
+    if (!allowed) return { success: false, error: 'Sem permissão para excluir calendário' }
+
+    const linkedProjects = await prisma.project.count({
+      where: {
+        workCalendarId: id,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      },
+    })
+
+    if (linkedProjects > 0) {
+      return { success: false, error: `Não é possível excluir calendário vinculado a ${linkedProjects} projeto(s)` }
+    }
+
     await prisma.workCalendar.delete({
       where: { id }
     })
@@ -115,16 +149,17 @@ export async function addHoliday(calendarId: string, data: {
   recurring?: boolean
 }) {
   try {
-    const user = await requireAuth()
-    if (user.role !== 'ADMIN') return { success: false, error: 'Apenas administradores podem adicionar feriado' }
+    const { user, allowed } = await canManageCalendars()
+    if (!allowed) return { success: false, error: 'Sem permissão para adicionar feriado' }
     const holiday = await prisma.calendarHoliday.create({
       data: {
         calendarId,
         ...data
       }
     })
+    const recalculated = await recalculateProjectsUsingCalendar(calendarId, user.tenantId)
     revalidatePath(`/dashboard/sistema/calendarios/${calendarId}`)
-    return { success: true, data: holiday }
+    return { success: true, data: holiday, recalculated }
   } catch (error) {
     console.error('Erro ao adicionar feriado:', error)
     return { success: false, error: 'Erro ao adicionar feriado' }
@@ -133,8 +168,8 @@ export async function addHoliday(calendarId: string, data: {
 
 export async function deleteHoliday(id: string) {
   try {
-    const user = await requireAuth()
-    if (user.role !== 'ADMIN') return { success: false, error: 'Apenas administradores podem remover feriado' }
+    const { user, allowed } = await canManageCalendars()
+    if (!allowed) return { success: false, error: 'Sem permissão para remover feriado' }
     // Buscar calendarId para revalidate
     const holiday = await prisma.calendarHoliday.findUnique({
       where: { id },
@@ -146,9 +181,11 @@ export async function deleteHoliday(id: string) {
     })
     
     if (holiday) {
+        const recalculated = await recalculateProjectsUsingCalendar(holiday.calendarId, user.tenantId)
         revalidatePath(`/dashboard/sistema/calendarios/${holiday.calendarId}`)
+        return { success: true, recalculated }
     }
-    return { success: true }
+    return { success: true, recalculated: 0 }
   } catch (error) {
     console.error('Erro ao remover feriado:', error)
     return { success: false, error: 'Erro ao remover feriado' }

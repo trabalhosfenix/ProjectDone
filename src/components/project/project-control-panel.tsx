@@ -8,9 +8,9 @@ import { ProjectBudgetEditor } from './project-budget-editor'
 interface ProjectControlPanelProps {
   projectId: string
   project: {
-    progress?: number | null
-    budget?: number | null
-    actualCost?: number | null
+    progress?: number | string | null
+    budget?: number | string | null
+    actualCost?: number | string | null
     startDate?: string | Date | null
     endDate?: string | Date | null
   }
@@ -60,6 +60,23 @@ export function ProjectControlPanel({ projectId, project }: ProjectControlPanelP
     }
   }
 
+  const toNumber = (value: unknown): number => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+    if (typeof value === 'string') {
+      const parsed = Number(value.replace(',', '.'))
+      return Number.isFinite(parsed) ? parsed : 0
+    }
+    if (value && typeof value === 'object' && 'toNumber' in value && typeof (value as { toNumber: () => number }).toNumber === 'function') {
+      const parsed = (value as { toNumber: () => number }).toNumber()
+      return Number.isFinite(parsed) ? parsed : 0
+    }
+    return 0
+  }
+
+  const progressValue = toNumber(project.progress)
+  const budgetValue = toNumber(project.budget)
+  const actualCostValue = toNumber(project.actualCost)
+
   if (loading) {
     return (
       <div className="p-6">
@@ -104,8 +121,8 @@ export function ProjectControlPanel({ projectId, project }: ProjectControlPanelP
           <h3 className="text-lg font-bold text-gray-900">Painel de Controle</h3>
           <ProjectBudgetEditor 
             projectId={projectId}
-            currentBudget={project.budget || 0}
-            currentActualCost={project.actualCost || 0}
+            currentBudget={budgetValue}
+            currentActualCost={actualCostValue}
             currentStartDate={project.startDate?.toString()}
             currentEndDate={project.endDate?.toString()}
           />
@@ -234,12 +251,12 @@ export function ProjectControlPanel({ projectId, project }: ProjectControlPanelP
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-gray-600">Progresso Geral:</span>
-                <span className="font-semibold">{project.progress || 0}%</span>
+                <span className="font-semibold">{progressValue}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
                   className="bg-blue-600 h-3 rounded-full transition-all"
-                  style={{ width: `${Math.min(project.progress || 0, 100)}%` }}
+                  style={{ width: `${Math.min(progressValue, 100)}%` }}
                 ></div>
               </div>
             </div>
@@ -248,18 +265,18 @@ export function ProjectControlPanel({ projectId, project }: ProjectControlPanelP
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Orçamento:</span>
-                <span className="font-semibold">R$ {(project.budget || 0).toFixed(2)}</span>
+                <span className="font-semibold">R$ {budgetValue.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Custo Real:</span>
-                <span className="font-semibold">R$ {(project.actualCost || 0).toFixed(2)}</span>
+                <span className="font-semibold">R$ {actualCostValue.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Utilização:</span>
                 <span className={`font-semibold ${
-                  (project.actualCost || 0) > (project.budget || 0) ? 'text-red-600' : 'text-green-600'
+                  actualCostValue > budgetValue ? 'text-red-600' : 'text-green-600'
                 }`}>
-                  {project.budget ? ((project.actualCost || 0) / project.budget * 100).toFixed(1) : 0}%
+                  {budgetValue > 0 ? ((actualCostValue / budgetValue) * 100).toFixed(1) : 0}%
                 </span>
               </div>
             </div>
