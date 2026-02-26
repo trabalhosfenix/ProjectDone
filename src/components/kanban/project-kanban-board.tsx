@@ -174,7 +174,7 @@ function SortableItem({ item, onDelete }: { item: KanbanItem, onDelete: (id: str
   )
 }
 
-export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: string, initialItems: KanbanItem[] }) {
+export function ProjectKanbanBoard({ projectId, initialItems, responsibleOptions = [] }: { projectId: string, initialItems: KanbanItem[], responsibleOptions?: string[] }) {
   const [items, setItems] = useState<KanbanItem[]>(
     initialItems.map((item) => ({ ...item, status: normalizeTaskStatus(item.status) }))
   )
@@ -406,12 +406,16 @@ export function ProjectKanbanBoard({ projectId, initialItems }: { projectId: str
                                   onChange={e => setNewWbs(e.target.value)}
                                 />
                                 <div className="grid grid-cols-2 gap-2 mb-2">
-                                  <Input
-                                    placeholder="Responsável"
-                                    className="bg-white"
+                                  <select
+                                    className="h-9 rounded-md border border-input bg-white px-3 text-sm"
                                     value={newResponsible}
-                                    onChange={e => setNewResponsible(e.target.value)}
-                                  />
+                                    onChange={(e) => setNewResponsible(e.target.value)}
+                                  >
+                                    <option value="">Sem responsável</option>
+                                    {responsibleOptions.map((option) => (
+                                      <option key={option} value={option}>{option}</option>
+                                    ))}
+                                  </select>
                                   <select
                                     className="h-9 rounded-md border border-input bg-white px-3 text-sm"
                                     value={newPriority}
