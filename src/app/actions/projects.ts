@@ -231,6 +231,7 @@ export async function createProject(data: {
   client?: string;
   budget?: number;
   priority?: string;
+  workCalendarId?: string;
 }) {
   try {
     const currentUser = await requireAuth();
@@ -287,6 +288,7 @@ export async function updateProject(
     objective: string;
     assumptions: string;
     constraints: string;
+    workCalendarId: string | null;
   }>
 ) {
   try {
