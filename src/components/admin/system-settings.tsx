@@ -62,8 +62,11 @@ export function SystemSettings() {
   };
 
   return (
-    <div className="max-w-4xl space-y-8">
-      <div className="flex flex-col gap-1">
+    <div className="max-w-5xl space-y-8 rounded-3xl border border-slate-100 bg-gradient-to-b from-white via-white to-slate-50/80 p-6 md:p-8 shadow-sm">
+      <div className="flex flex-col gap-2">
+        <span className="w-fit rounded-full bg-[#094160]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-[#094160]">
+          Administração do Sistema
+        </span>
         <h2 className="text-2xl font-bold text-[#094160]">Parâmetros e Segurança</h2>
         <p className="text-sm text-gray-500">Controle de acesso, status e preferências do sistema.</p>
       </div>
@@ -73,7 +76,7 @@ export function SystemSettings() {
             <Shield className="w-5 h-5 text-blue-500" />
             Perfis de Acesso
         </h3>
-        <Card className="border-none shadow-sm">
+        <Card className="border-slate-100 shadow-sm">
           <CardContent className="pt-6">
             <p className="text-sm text-gray-600">
               A gestão de perfis e permissões foi consolidada na guia <span className="font-semibold">Perfis</span>.
@@ -86,19 +89,32 @@ export function SystemSettings() {
 
       <div className="space-y-4">
         <h3 className="text-lg font-black text-[#094160] uppercase tracking-wider">Usuários e Contas</h3>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-          <div>
-            <TenantManagement />
-          </div>
-          <div>
-            <UserManagement />
-          </div>
+        <div className="space-y-6">
+          <Card className="border-slate-100 shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-sm uppercase tracking-wider text-[#094160]">Empresas / Tenants</CardTitle>
+              <CardDescription>Gerencie empresas e ambientes cadastrados.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TenantManagement />
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-100 shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-sm uppercase tracking-wider text-[#094160]">Usuários</CardTitle>
+              <CardDescription>Controle contas, vínculo e permissões dos usuários.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <UserManagement />
+            </CardContent>
+          </Card>
         </div>
       </div>
 
       <div className="h-px bg-gray-100 my-8" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="space-y-6">
         <Card className="border-none shadow-md overflow-hidden">
           <CardHeader className="bg-[#094160] text-white">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -111,8 +127,8 @@ export function SystemSettings() {
           </CardHeader>
           <CardContent className="pt-6 space-y-4">
             <div className="flex gap-2">
-              <Input 
-                placeholder="Ex: Em Homologação" 
+              <Input
+                placeholder="Ex: Em Homologação"
                 value={newStatus}
                 onChange={(e) => setNewStatus(e.target.value)}
                 className="h-9 text-sm"
@@ -126,12 +142,14 @@ export function SystemSettings() {
             <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
               {isLoading ? (
                 <p className="text-center text-xs text-gray-400 py-4 italic">Carregando...</p>
+              ) : statusOptions.length === 0 ? (
+                <p className="text-center text-xs text-gray-400 py-4 italic">Nenhum status cadastrado.</p>
               ) : statusOptions.map((opt) => (
                 <div key={opt.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 group hover:border-blue-200 transition-colors">
                   <span className="text-xs font-medium text-gray-700">{opt.label}</span>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     className="h-7 w-7 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 hover:bg-red-50"
                     onClick={() => handleDeleteStatus(opt.id)}
                   >
@@ -144,7 +162,7 @@ export function SystemSettings() {
         </Card>
 
         <Card className="border-none shadow-md overflow-hidden">
-           <CardHeader className="bg-[#094160] text-white">
+          <CardHeader className="bg-[#094160] text-white">
             <CardTitle className="text-sm flex items-center gap-2">
               <Settings2 className="w-4 h-4" />
               Tipos de Projeto
