@@ -7,6 +7,7 @@ import { isDoneStatus, normalizeTaskStatus } from '@/lib/task-status'
 import { syncProjectProgress } from '@/lib/project-progress'
 import { syncStatusAndProgress } from '@/lib/project-item-flow'
 import { requireProjectAccess } from '@/lib/access-control'
+import { getProjectInvolvedOptions, isResponsibleAllowed } from '@/lib/project-involved'
 
 type CreateKanbanItemInput = {
   projectId: string
@@ -71,12 +72,32 @@ export async function getKanbanItems(projectId: string) {
   }
 }
 
+export async function getKanbanResponsibleOptions(projectId: string) {
+  try {
+    const { user } = await requireProjectAccess(projectId)
+    const options = await getProjectInvolvedOptions(projectId, user.tenantId)
+
+    return {
+      success: true,
+      data: options,
+    }
+  } catch (error) {
+    console.error('Erro ao buscar responsáveis elegíveis do kanban:', error)
+    return { success: false, error: 'Falha ao carregar envolvidos do projeto' }
+  }
+}
+
 /**
  * Criar novo item no Kanban
  */
 export async function createKanbanItem(input: CreateKanbanItemInput) {
   try {
     const { user } = await requireProjectAccess(input.projectId)
+    const responsibleOptions = await getProjectInvolvedOptions(input.projectId, user.tenantId)
+    if (!isResponsibleAllowed(input.responsible, responsibleOptions)) {
+      return { success: false, error: 'Responsável deve ser um envolvido do projeto' }
+    }
+
     const normalizedStatus = normalizeTaskStatus(input.status)
     const plannedStart = parseOptionalDate(input.datePlanned) ?? startOfDay(new Date())
     const plannedEnd = parseOptionalDate(input.datePlannedEnd) ?? addDays(plannedStart, 7)

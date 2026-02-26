@@ -1,11 +1,12 @@
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
-import { getKanbanItems } from '@/app/actions/kanban'
+import { getKanbanItems, getKanbanResponsibleOptions } from '@/app/actions/kanban'
 import { ProjectKanbanBoard } from '@/components/kanban/project-kanban-board'
 
 export default async function KanbanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const { data: items } = await getKanbanItems(id)
+  const { data: responsibleOptions } = await getKanbanResponsibleOptions(id)
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -20,7 +21,7 @@ export default async function KanbanPage({ params }: { params: Promise<{ id: str
            </div>
            
            <div className="flex-1 min-h-0">
-               <ProjectKanbanBoard projectId={id} initialItems={Array.isArray(items) ? items : [] as any} />
+               <ProjectKanbanBoard projectId={id} initialItems={Array.isArray(items) ? items : [] as any} responsibleOptions={Array.isArray(responsibleOptions) ? responsibleOptions : []} />
            </div>
         </div>
       </div>

@@ -5,6 +5,7 @@ import { calculateEndDate, calculateDuration, WorkCalendarConfig } from '@/lib/c
 import { syncProjectProgress } from '@/lib/project-progress'
 import { syncStatusAndProgress } from '@/lib/project-item-flow'
 import { AccessError, requireProjectAccess } from '@/lib/access-control'
+import { getProjectInvolvedOptions, isResponsibleAllowed } from '@/lib/project-involved'
 
 export async function PATCH(
   request: Request,
@@ -75,7 +76,13 @@ export async function PATCH(
       }
     }
 
-    if (body.responsible !== undefined) dataToUpdate.responsible = body.responsible
+    if (body.responsible !== undefined) {
+      const responsibleOptions = await getProjectInvolvedOptions(id, user.tenantId)
+      if (!isResponsibleAllowed(body.responsible, responsibleOptions)) {
+        return NextResponse.json({ success: false, error: 'Responsável deve ser um envolvido do projeto' }, { status: 400 })
+      }
+      dataToUpdate.responsible = body.responsible
+    }
     if (body.dateActual) dataToUpdate.dateActual = new Date(body.dateActual)
     if (body.dateActualStart) dataToUpdate.dateActualStart = new Date(body.dateActualStart)
 
