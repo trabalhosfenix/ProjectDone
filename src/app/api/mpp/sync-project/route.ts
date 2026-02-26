@@ -124,6 +124,8 @@ export async function POST(request: Request) {
       importedProjectId = createdImported.id
     }
 
+    const syncTenantId = currentUser.tenantId ?? localProject.tenantId
+
     const mppTasks = await getMppTasks(mppProjectId, undefined, { tenantId, timeoutMs: 120_000 })
     const importedExternalIds = mppTasks.map((task) => `mpp:${mppProjectId}:${String(task.id)}`)
     let createdTasks = 0
@@ -134,7 +136,7 @@ export async function POST(request: Request) {
       const externalId = `mpp:${mppProjectId}:${String(task.id)}`
       const taskData = {
         projectId: localProject.id,
-        tenantId: currentUser.tenantId || undefined,
+        tenantId: syncTenantId,
         originSheet: 'CRONOGRAMA_IMPORT',
         task: task.task,
         wbs: task.wbs || undefined,
@@ -148,7 +150,8 @@ export async function POST(request: Request) {
       if (effectiveSyncMode === 'append') {
         const existingTask = await prisma.projectItem.findUnique({
           where: {
-            projectId_externalId: {
+            tenantId_projectId_externalId: {
+              tenantId: syncTenantId,
               projectId: localProject.id,
               externalId,
             },
@@ -160,7 +163,7 @@ export async function POST(request: Request) {
           await prisma.projectItem.create({
             data: {
               externalId,
-              priority: 'Média',
+              priority: 'MEDIA',
               ...taskData,
             },
           })
@@ -173,7 +176,8 @@ export async function POST(request: Request) {
 
       const existingTask = await prisma.projectItem.findUnique({
         where: {
-          projectId_externalId: {
+          tenantId_projectId_externalId: {
+            tenantId: syncTenantId,
             projectId: localProject.id,
             externalId,
           },
@@ -183,7 +187,8 @@ export async function POST(request: Request) {
 
       await prisma.projectItem.upsert({
         where: {
-          projectId_externalId: {
+          tenantId_projectId_externalId: {
+            tenantId: syncTenantId,
             projectId: localProject.id,
             externalId,
           },
@@ -191,7 +196,7 @@ export async function POST(request: Request) {
         update: taskData,
         create: {
           externalId,
-          priority: 'Média',
+          priority: 'MEDIA',
           ...taskData,
         },
       })

@@ -94,14 +94,17 @@ export async function PATCH(
         }
     }
     
-    // Permite atualização direta de duração (se passar via body, ex: input manual)
-    // Se passar duration e start, calcula end.
-    if (body.duration !== undefined && body.datePlanned) {
-         const start = new Date(body.datePlanned)
-         const end = calculateEndDate(start, Number(body.duration), config)
-         dataToUpdate.duration = Number(body.duration)
-         dataToUpdate.datePlanned = start
-         dataToUpdate.datePlannedEnd = end
+    // Permite atualização direta de duração (manual)
+    // Se vier duração, recalcula fim usando start informado ou start atual do item.
+    if (body.duration !== undefined) {
+         const startSource = body.datePlanned || item.datePlanned
+         if (startSource) {
+           const start = new Date(startSource)
+           const end = calculateEndDate(start, Number(body.duration), config)
+           dataToUpdate.duration = Number(body.duration)
+           dataToUpdate.datePlanned = start
+           dataToUpdate.datePlannedEnd = end
+         }
     }
 
     const updated = await prisma.projectItem.update({
