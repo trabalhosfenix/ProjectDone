@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Shield, Plus, Trash2, Edit, Users, ChevronDown, ChevronUp, Save } from 'lucide-react'
 import { toast } from 'sonner'
-import { getRoles, createRole, updateRole, deleteRole } from '@/app/actions/roles'
+import { getRoles, createRole, updateRole, deleteRole } from '@/app/actions/permissions'
 
 // Lista de permissões granulares (conforme slide)
 const PERMISSIONS = [
@@ -58,9 +58,7 @@ export default function PerfisPage() {
 
   const loadRoles = async () => {
     const result = await getRoles()
-    if (result.success && result.data) {
-      setRoles(result.data)
-    }
+    setRoles(result)
     setLoading(false)
   }
 
@@ -74,7 +72,7 @@ export default function PerfisPage() {
     if (editingRole) {
       result = await updateRole(editingRole.id, formData)
     } else {
-      result = await createRole(formData)
+      result = await createRole(formData.name, formData.permissions)
     }
 
     if (result.success) {
