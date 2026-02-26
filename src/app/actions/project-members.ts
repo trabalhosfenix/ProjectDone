@@ -70,15 +70,29 @@ export async function addProjectMember(projectId: string, email: string, role: s
     const normalizedEmail = email.trim().toLowerCase()
     const expectedTenantId = project.tenantId || currentUser.tenantId || null
 
-    const user = await prisma.user.findUnique({
-      where: {
-        email: normalizedEmail,
-      },
-      select: {
-        id: true,
-        tenantId: true,
-      }
-    })
+    const user = expectedTenantId
+      ? await prisma.user.findUnique({
+          where: {
+            tenantId_email: {
+              tenantId: expectedTenantId,
+              email: normalizedEmail,
+            },
+          },
+          select: {
+            id: true,
+            tenantId: true,
+          },
+        })
+      : await prisma.user.findFirst({
+          where: {
+            email: normalizedEmail,
+          },
+          select: {
+            id: true,
+            tenantId: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        })
 
     if (!user) {
       return { success: false, error: 'Usuário não encontrado com este email' }

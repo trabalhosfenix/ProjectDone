@@ -70,7 +70,7 @@ export async function POST(request: Request) {
         data: {
           name: projectName,
           code: `MPP-${mppProjectId.slice(0, 8).toUpperCase()}`,
-          status: 'Andamento',
+          status: 'EM_ANDAMENTO',
           type: 'Importado MPP',
           description: `Projeto sincronizado da MPP Platform. External ID: ${mppProjectId}`,
           createdById: currentUser.id,
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
           projectId: localProject.id,
           externalProjectId: mppProjectId,
           syncMode: effectiveSyncMode,
-          syncStatus: 'syncing',
+          syncStatus: 'SYNCING',
           tenantId: currentUser.tenantId || undefined,
         },
       })
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
           projectId: localProject.id,
           externalProjectId: mppProjectId,
           syncMode: effectiveSyncMode,
-          syncStatus: 'syncing',
+          syncStatus: 'SYNCING',
           tenantId: currentUser.tenantId || undefined,
           importedById: currentUser.id,
         },
@@ -227,7 +227,7 @@ export async function POST(request: Request) {
       await prisma.importedProject.update({
         where: { id: importedProjectId },
         data: {
-          syncStatus: 'synced',
+          syncStatus: 'SYNCED',
           lastSyncAt: new Date(),
           syncMode: effectiveSyncMode,
           name: projectName,
@@ -258,7 +258,7 @@ export async function POST(request: Request) {
         .update({
           where: { id: importedProjectId },
           data: {
-            syncStatus: 'error',
+            syncStatus: 'ERROR',
             lastSyncAt: new Date(),
           },
         })

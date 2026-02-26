@@ -43,6 +43,7 @@ RUN adduser --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 
 # Copia o build do Next.js
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
@@ -63,7 +64,7 @@ ENV HOSTNAME="0.0.0.0"
 
 # Copia entrypoint
 COPY --chown=nextjs:nodejs entrypoint.sh ./
-RUN chmod +x entrypoint.sh
+RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 # Muda para usuário não-root
 USER nextjs

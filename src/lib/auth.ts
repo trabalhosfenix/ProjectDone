@@ -24,10 +24,14 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Credenciais inválidas");
         }
 
-        // Optimization: Fetch user AND role/permissions in a single query
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-          include: { userRole: true } 
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+
+        // Fetch user and permissions in one query.
+        // Email is unique per tenant in this schema, not globally.
+        const user = await prisma.user.findFirst({
+          where: { email: normalizedEmail },
+          include: { userRole: true },
+          orderBy: { createdAt: "asc" },
         });
 
         if (!user || !user.password) {
