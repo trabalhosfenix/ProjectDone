@@ -138,7 +138,9 @@ export function ProjectTable({ items, members = [] }: ProjectTableProps) {
       if (!editValue?.trim()) return
       payload = { task: editValue }
     } else if (field === 'duration') {
-       payload = { metadata: { duration: editValue } }
+       const durationNum = parseFloat(editValue)
+       if (isNaN(durationNum) || durationNum < 0) return
+       payload = { duration: durationNum }
     } else if (['datePlanned', 'datePlannedEnd', 'dateActualStart', 'dateActual'].includes(field)) {
        const dateVal = editValue ? new Date(editValue) : null
        payload = { [field]: dateVal }
