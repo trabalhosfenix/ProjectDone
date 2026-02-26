@@ -1,4 +1,6 @@
 #!/bin/sh
+set -e
+
 echo "=== INICIANDO APLICAÇÃO (Prisma 5) ==="
 echo "DATABASE_URL: $DATABASE_URL"
 echo "Diretório atual: $(pwd)"
@@ -18,10 +20,15 @@ else
 fi
 
 # Aguarda o banco com pg_isready
-echo "Aguardando PostgreSQL em db:5432..."
-echo "Usuário: $POSTGRES_USER, Banco: $POSTGRES_DB"
+DB_HOST="${POSTGRES_HOST:-db}"
+DB_PORT="${POSTGRES_PORT:-5432}"
+DB_USER="${POSTGRES_USER:-admin}"
+DB_NAME="${POSTGRES_DB:-projectdone}"
 
-until pg_isready -h db -U $POSTGRES_USER -d $POSTGRES_DB; do
+echo "Aguardando PostgreSQL em db:5432..."
+echo "Host: $DB_HOST, Porta: $DB_PORT, Usuário: $DB_USER, Banco: $DB_NAME"
+
+until pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME"; do
   echo "PostgreSQL não está pronto - aguardando 2s..."
   sleep 2
 done
@@ -36,6 +43,13 @@ if [ $? -eq 0 ]; then
 else
   echo "✗ Erro ao sincronizar banco"
   exit 1
+fi
+
+if [ "${ALLOW_BOOTSTRAP_ADMIN:-true}" = "true" ]; then
+  echo "Executando bootstrap de tenant/admin do sistema..."
+  node ./scripts/bootstrap-admin.js
+else
+  echo "Bootstrap de tenant/admin desativado (ALLOW_BOOTSTRAP_ADMIN != true)"
 fi
 
 echo "Iniciando aplicação..."

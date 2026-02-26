@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { AccessError, requireProjectAccess } from '@/lib/access-control'
 
 export async function GET(
   request: Request,
@@ -7,6 +8,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    await requireProjectAccess(id)
     const { searchParams } = new URL(request.url)
     const key = searchParams.get('key')
 
@@ -28,6 +30,9 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: metadata })
   } catch (error) {
+    if (error instanceof AccessError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+    }
     return NextResponse.json({ success: false, error: 'Erro ao buscar metadados' }, { status: 500 })
   }
 }
@@ -38,6 +43,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params
+    await requireProjectAccess(id)
     const body = await request.json()
     const { key, value } = body
 
@@ -72,6 +78,9 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, data: (updated.metadata as any)[key] })
   } catch (error) {
+    if (error instanceof AccessError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+    }
     console.error('Erro ao atualizar metadata:', error)
     return NextResponse.json({ success: false, error: 'Erro ao atualizar metadados' }, { status: 500 })
   }

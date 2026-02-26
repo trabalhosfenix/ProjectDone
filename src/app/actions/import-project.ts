@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import readXlsxFile from 'read-excel-file/node'
 import { parse, isValid, addBusinessDays } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { requireProjectAccess } from '@/lib/access-control'
 
 // Mapeamento das colunas do Excel - aceita várias variações de nomes
 const COLUMN_CANDIDATES = {
@@ -103,6 +104,7 @@ export async function importProjectExcel(formData: FormData) {
   try {
     const projectId = formData.get('projectId') as string
     const file = formData.get('file') as File
+    const { project, user } = await requireProjectAccess(projectId)
 
     if (!projectId || !file) {
       return { success: false, error: 'Projeto ou arquivo não fornecido' }
@@ -187,6 +189,7 @@ export async function importProjectExcel(formData: FormData) {
         const item = await prisma.projectItem.create({
             data: {
                 projectId,
+                tenantId: project.tenantId || user.tenantId || undefined,
                 task: taskName,
                 originSheet: 'CRONOGRAMA_IMPORT',
                 wbs: wbsVal ? String(wbsVal) : null,

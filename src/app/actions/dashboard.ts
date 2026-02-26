@@ -2,10 +2,15 @@
 
 import { prisma } from "@/lib/prisma";
 import { startOfDay, endOfDay, format, eachDayOfInterval, min, max, isBefore, isSameDay } from "date-fns";
+import { buildProjectScope, requireAuth } from "@/lib/access-control";
+import { buildProjectItemScope } from "@/lib/access-scopes";
 
 export async function getDashboardStats() {
   try {
-    const items = await prisma.projectItem.findMany();
+    const currentUser = await requireAuth()
+    const items = await prisma.projectItem.findMany({
+      where: buildProjectItemScope(currentUser),
+    });
     
     const total = items.length;
     const completedItems = items.filter((i: any) => i.status === "Keyuser - Concluído");
@@ -50,12 +55,12 @@ export async function getDashboardStats() {
 
 export async function getCurvaSData() {
   try {
+    const currentUser = await requireAuth()
+    const itemScope = buildProjectItemScope(currentUser)
     const items = await prisma.projectItem.findMany({
       where: {
-        OR: [
-          { datePlanned: { not: null } },
-          { dateActual: { not: null } }
-        ]
+        ...(itemScope || {}),
+        OR: [{ datePlanned: { not: null } }, { dateActual: { not: null } }],
       },
       orderBy: { datePlanned: "asc" }
     });
@@ -96,7 +101,26 @@ export async function getCurvaSData() {
 
 export async function getRecentActivities() {
   try {
+    const currentUser = await requireAuth()
+    const isAdmin = currentUser.role === "ADMIN"
+    const projectScope = buildProjectScope(currentUser)
     return await prisma.auditLog.findMany({
+      where: isAdmin
+        ? (currentUser.tenantId
+            ? {
+                projectItem: {
+                  is: { tenantId: currentUser.tenantId },
+                },
+              }
+            : undefined)
+        : {
+            projectItem: {
+              is: {
+                ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
+                project: { is: projectScope },
+              },
+            },
+          },
       take: 10,
       orderBy: { createdAt: "desc" },
       include: {

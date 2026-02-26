@@ -209,10 +209,10 @@ export function ProjectSetup({ projectId, projectName }: ProjectSetupProps) {
               <ArrowLeft className="w-5 h-5 text-gray-500" />
             </Button>
           </Link>
-          <div>
+          {/* <div>
             <h1 className="text-2xl font-bold text-gray-900">{projectName || 'Configurar Projeto'}</h1>
             <p className="text-gray-500 text-sm">ID: {projectId}</p>
-          </div>
+          </div> */}
         </div>
 
         <div className="text-center pt-4">

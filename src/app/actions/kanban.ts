@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { isDoneStatus, normalizeTaskStatus } from '@/lib/task-status'
 import { syncProjectProgress } from '@/lib/project-progress'
 import { syncStatusAndProgress } from '@/lib/project-item-flow'
+import { requireProjectAccess } from '@/lib/access-control'
 
 type CreateKanbanItemInput = {
   projectId: string
@@ -30,9 +31,11 @@ function parseOptionalDate(value?: Date | string | null): Date | null {
  */
 export async function getKanbanItems(projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
     const items = await prisma.projectItem.findMany({
       where: {
-        projectId
+        projectId,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
       },
       orderBy: {
         createdAt: 'asc'
@@ -73,14 +76,20 @@ export async function getKanbanItems(projectId: string) {
  */
 export async function createKanbanItem(input: CreateKanbanItemInput) {
   try {
+    const { user } = await requireProjectAccess(input.projectId)
     const normalizedStatus = normalizeTaskStatus(input.status)
     const plannedStart = parseOptionalDate(input.datePlanned) ?? startOfDay(new Date())
     const plannedEnd = parseOptionalDate(input.datePlannedEnd) ?? addDays(plannedStart, 7)
     const needsScheduling = !parseOptionalDate(input.datePlanned) || !parseOptionalDate(input.datePlannedEnd)
+    const project = await prisma.project.findUnique({
+      where: { id: input.projectId },
+      select: { tenantId: true },
+    })
 
     const item = await prisma.projectItem.create({
       data: {
         projectId: input.projectId,
+        tenantId: project?.tenantId || user.tenantId || undefined,
         task: input.task,
         wbs: input.wbs?.trim() || null,
         scenario: input.scenario || null,
@@ -114,13 +123,17 @@ export async function createKanbanItem(input: CreateKanbanItemInput) {
  */
 export async function moveKanbanItem(itemId: string, projectId: string, newStatus: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
     const existing = await prisma.projectItem.findUnique({
       where: { id: itemId },
-      select: { dateActualStart: true, dateActual: true, metadata: true, status: true }
+      select: { dateActualStart: true, dateActual: true, metadata: true, status: true, tenantId: true, projectId: true }
     })
 
     if (!existing) {
       return { success: false, error: 'Card não encontrado' }
+    }
+    if (existing.projectId !== projectId || (user.tenantId && existing.tenantId && existing.tenantId !== user.tenantId)) {
+      return { success: false, error: 'Acesso negado ao card' }
     }
 
     const flow = syncStatusAndProgress({
@@ -172,6 +185,14 @@ export async function moveKanbanItem(itemId: string, projectId: string, newStatu
  */
 export async function deleteKanbanItem(itemId: string, projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
+    const existing = await prisma.projectItem.findUnique({
+      where: { id: itemId },
+      select: { projectId: true, tenantId: true },
+    })
+    if (!existing || existing.projectId !== projectId || (user.tenantId && existing.tenantId && existing.tenantId !== user.tenantId)) {
+      return { success: false, error: 'Acesso negado ao card' }
+    }
     await prisma.projectItem.delete({
       where: { id: itemId }
     })

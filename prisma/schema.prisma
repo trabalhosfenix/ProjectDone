@@ -7,12 +7,30 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")  // Isso ainda funciona no Prisma 7
+  url      = env("DATABASE_URL")  
+}
+
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  roles       Role[]
+  projects    Project[]
+  projectItems ProjectItem[]
+  projectMembers ProjectMember[]
+  importedProjects ImportedProject[]
+  projectCanvases ProjectCanvas[]
+  projectItemDependencies ProjectItemDependency[]
 }
 
 model User {
   id                  String   @id @default(uuid())
-  email               String   @unique
+  email               String
   password            String
   name                String?
   role                String   @default("USER") // Mantido para compatibilidade inicial
@@ -29,9 +47,11 @@ model User {
   notes               String?  // Observações @db.Text
   
   // Financeiro / Alocação
-  defaultCost         Float?   @default(0) // Custo padrão por hora
-  defaultRevenue      Float?   @default(0) // Receita padrão por hora
+  defaultCost         Decimal? @default(0) @db.Decimal(14, 2) // Custo padrão por hora
+  defaultRevenue      Decimal? @default(0) @db.Decimal(14, 2) // Receita padrão por hora
   workHours           Float?   @default(8) // Horas por dia
+  tenantId            String
+  tenant              Tenant   @relation(fields: [tenantId], references: [id])
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -46,15 +66,23 @@ model User {
   projectMembers      ProjectMember[]  // Projetos em que participa
   importJobs          ImportJob[]      @relation("ImportJobRequester")
   importedProjects    ImportedProject[] @relation("ImportedProjectOwner")
+
+  @@index([tenantId])
+  @@unique([tenantId, email])
 }
 
 model Role {
   id          String   @id @default(uuid())
-  name        String   @unique // Ex: "Gerente de Projetos", "Cliente VIP"
+  name        String // Ex: "Gerente de Projetos", "Cliente VIP"
   permissions Json     // Estrutura: { "dashboard": true, "kanban": false, "canEdit": true, etc }
   users       User[]
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@unique([tenantId, name])
 }
 
 // Projeto = Container que agrupa tarefas, documentos, pessoas, etc.
@@ -62,10 +90,10 @@ model Project {
   id              String   @id @default(uuid())
   name            String
   description     String?  @db.Text
-  code            String?  @unique // Código do projeto (ex: PROJ-2025-001)
+  code            String? // Código do projeto (ex: PROJ-2025-001)
   
   // Status e Tipo
-  status          String   @default("A iniciar") // A iniciar, Andamento, Concluído, Parado, etc.
+  status          ProjectStatus @default(A_INICIAR)
   type            String?  // Implementação, Pesquisa, Manutenção, etc.
   
   // Planejamento Detalhado
@@ -105,19 +133,19 @@ model Project {
   client          String?  // Cliente
   
   // Financeiro PREVISTO
-  budget          Float?   @default(0) // Orçamento previsto
-  plannedRevenue  Float?   @default(0) // Receita prevista
-  plannedProfit   Float?   @default(0) // Lucro previsto
+  budget          Decimal? @default(0) @db.Decimal(14, 2) // Orçamento previsto
+  plannedRevenue  Decimal? @default(0) @db.Decimal(14, 2) // Receita prevista
+  plannedProfit   Decimal? @default(0) @db.Decimal(14, 2) // Lucro previsto
   
   // Financeiro BASE (baseline)
-  baseBudget      Float?   @default(0)
-  baseRevenue     Float?   @default(0)
-  baseProfit      Float?   @default(0)
+  baseBudget      Decimal? @default(0) @db.Decimal(14, 2)
+  baseRevenue     Decimal? @default(0) @db.Decimal(14, 2)
+  baseProfit      Decimal? @default(0) @db.Decimal(14, 2)
   
   // Financeiro REAL
-  actualCost      Float?   @default(0) // Custo real
-  actualRevenue   Float?   @default(0) // Receita real
-  actualProfit    Float?   @default(0) // Lucro real
+  actualCost      Decimal? @default(0) @db.Decimal(14, 2) // Custo real
+  actualRevenue   Decimal? @default(0) @db.Decimal(14, 2) // Receita real
+  actualProfit    Decimal? @default(0) @db.Decimal(14, 2) // Lucro real
   
   // Esforço (em horas)
   baseEffort      Int?     @default(0) // Esforço base
@@ -128,12 +156,14 @@ model Project {
   progress        Float?   @default(0) // 0-100%
   
   // Priorização
-  priority        String?  @default("Média") // Baixa, Média, Alta
+  priority        PriorityLevel? @default(MEDIA)
   impactScore     Int?     @default(1) // 1-5
   complexityScore Int?     @default(1) // 1-5
   
   // Metadados flexíveis
   metadata        Json?
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
   
   // Controle
   createdAt       DateTime @default(now())
@@ -161,6 +191,14 @@ model Project {
   documents       ProjectDocument[]    // Documentos do projeto
   cutoverTasks    CutoverTask[]        // Tarefas do Plano de Cutover
   importedProjects ImportedProject[]
+  itemDependencies ProjectItemDependency[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, updatedAt])
+  @@index([tenantId, managerId])
+  @@index([tenantId, area])
+  @@unique([tenantId, code])
 }
 
 // Riscos do Projeto
@@ -281,14 +319,16 @@ model ProjectMember {
   id        String   @id @default(uuid())
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
   
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   
   role      String   // Ex: "Gerente", "Equipe", "Stakeholder", "Patrocinador"
   effort    Int?     @default(0) // Esforço alocado (horas)
-  cost      Float?   @default(0) // Custo hora
-  revenue   Float?   @default(0) // Receita hora
+  cost      Decimal? @default(0) @db.Decimal(14, 2) // Custo hora
+  revenue   Decimal? @default(0) @db.Decimal(14, 2) // Receita hora
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -296,6 +336,7 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([projectId])
   @@index([userId])
+  @@index([tenantId])
 }
 
 // Tabela única para armazenar todos os itens (TNV, Outbound, Inbound)
@@ -307,23 +348,25 @@ model ProjectItem {
   originSheet    String   // "TNV", "OUTBOUND", "INBOUND", "CRONOGRAMA_IMPORT"
   
   // Relacionamento com Projeto
-  projectId      String?
-  project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
   
   // Campos comuns
   scenario       String?  // Cenário
   task           String?  // Tarefa
   responsible    String?  // Responsável
   status         String?  // Status (Editável)
-  priority       String?  @default("Média") // Baixa, Média, Alta
+  priority       PriorityLevel?  @default(MEDIA)
   perspective    String?  @default("Geral") // Mercados e Clientes, Aprendizado e Crescimento, Financeira
   
   isCritical     Boolean  @default(false)   // Atividade crítica
   
   // Performance (SPI/CPI)
   weight         Float?   @default(1.0)   // Peso da tarefa no projeto
-  plannedValue   Float?   @default(0)     // Valor Planejado (PV) - Orçamento
-  actualCost     Float?   @default(0)     // Custo Real (AC)
+  plannedValue   Decimal? @default(0) @db.Decimal(14, 2)    // Valor Planejado (PV) - Orçamento
+  actualCost     Decimal? @default(0) @db.Decimal(14, 2)    // Custo Real (AC)
   
   // Datas
   datePlanned    DateTime? // Início Previsto
@@ -345,14 +388,36 @@ model ProjectItem {
   documents      Document[]
 
   // Dependências entre tarefas
-  predecessors   ProjectItem[] @relation("ItemDependencies")
-  successors     ProjectItem[] @relation("ItemDependencies")
+  predecessorDependencies ProjectItemDependency[] @relation("ItemDependencyPredecessor")
+  successorDependencies   ProjectItemDependency[] @relation("ItemDependencySuccessor")
 
   @@index([originSheet])
   @@index([status])
   @@index([responsible])
   @@index([projectId])
-  @@unique([projectId, externalId])
+  @@index([tenantId])
+  @@index([tenantId, projectId])
+  @@unique([tenantId, projectId, externalId])
+  @@index([tenantId, originSheet, status])
+}
+
+model ProjectItemDependency {
+  id                String   @id @default(uuid())
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  predecessorItemId String
+  predecessorItem   ProjectItem @relation("ItemDependencyPredecessor", fields: [predecessorItemId], references: [id], onDelete: Cascade)
+  successorItemId   String
+  successorItem     ProjectItem @relation("ItemDependencySuccessor", fields: [successorItemId], references: [id], onDelete: Cascade)
+  type              DependencyType @default(FS)
+  lag               Float?   @default(0)
+  createdAt         DateTime @default(now())
+
+  @@unique([predecessorItemId, successorItemId])
+  @@index([tenantId, projectId])
+  @@index([projectId])
 }
 
 model AuditLog {
@@ -390,8 +455,10 @@ model StatusOption {
 }
 
 model ProjectCanvas {
-  id            String   @id @default(cuid())
-  projectName   String   @unique // O nome do projeto ou originSheet
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  projectName   String // O nome do projeto ou originSheet
   justification String?  @db.Text
   objectives    String?  @db.Text
   benefits      String?  @db.Text
@@ -407,12 +474,15 @@ model ProjectCanvas {
   costs         String?  @db.Text
   
   // Workflow & Priorização
-  approvalStatus String   @default("Draft") // Draft, Review, Approved, Rejected
+  approvalStatus CanvasApprovalStatus @default(DRAFT)
   impactScore    Int?     @default(1)       // 1-5
   complexityScore Int?    @default(1)       // 1-5
   valueScore     Float?   @default(0)       // Calculado
   
   updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@unique([tenantId, projectName])
 }
 
 model Document {
@@ -429,7 +499,7 @@ model Document {
 
 // Registros do Projeto (histórico de atividades)
 model ProjectRecord {
-  id            String   @id @default(cuid())
+  id            String   @id @default(uuid())
   projectId     String
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   
@@ -444,7 +514,7 @@ model ProjectRecord {
   // Novos campos conforme slide
   attachmentUrl String?  // URL do documento anexado
   attachmentName String? // Nome do arquivo
-  revenue       Float?   @default(0) // Receita associada ao registro
+  revenue       Decimal? @default(0) @db.Decimal(14, 2) // Receita associada ao registro
   
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -456,7 +526,7 @@ model ProjectRecord {
 
 // Dependências entre Projetos
 model ProjectDependency {
-  id                String   @id @default(cuid())
+  id                String   @id @default(uuid())
   projectId         String
   project           Project  @relation("ProjectDependencies", fields: [projectId], references: [id], onDelete: Cascade)
   
@@ -495,7 +565,7 @@ model Issue {
   actualEnd       DateTime?
   
   // Prioridade
-  priority        String   @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  priority        IssuePriority   @default(MEDIUM)
   
   // Controle
   createdAt       DateTime @default(now())
@@ -509,6 +579,7 @@ model Issue {
   
   @@index([projectId])
   @@index([statusId])
+  @@index([projectId, statusId])
   @@index([type])
   @@index([createdById])
   @@index([createdAt])
@@ -568,7 +639,7 @@ model IssueComment {
 }
 
 model ProjectType {
-  id        String   @id @default(cuid())
+  id        String   @id @default(uuid())
   name      String   @unique
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -580,7 +651,7 @@ model WorkCalendar {
   id              String   @id @default(uuid())
   name            String
   description     String?
-  type            String   @default("BUSINESS_DAYS") // BUSINESS_DAYS, RUNNING_DAYS
+  type            WorkCalendarType   @default(BUSINESS_DAYS)
   workHoursPerDay Float    @default(8.0)
   isDefault       Boolean  @default(false)
   
@@ -680,11 +751,13 @@ model ImportedProject {
   name          String?
   source        String   @default("MPP") // Ex: MPP, XML, API
   syncMode      String   @default("upsert") // append | upsert | replace
-  syncStatus    String   @default("idle") // idle | syncing | synced | error
+  syncStatus    SyncStatus   @default(IDLE)
   lastSyncAt    DateTime?
 
   projectId     String?
   project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  tenantId      String
+  tenant        Tenant  @relation(fields: [tenantId], references: [id])
 
   importedById  String?
   importedBy    User?    @relation("ImportedProjectOwner", fields: [importedById], references: [id])
@@ -699,10 +772,58 @@ model ImportedProject {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@unique([source, externalUid])
+  @@unique([tenantId, source, externalUid])
   @@index([projectId])
+  @@index([tenantId])
+  @@index([tenantId, source])
   @@index([source])
   @@index([syncStatus])
+}
+
+enum ProjectStatus {
+  A_INICIAR
+  EM_ANDAMENTO
+  CONCLUIDO
+  PARADO
+}
+
+enum PriorityLevel {
+  BAIXA
+  MEDIA
+  ALTA
+}
+
+enum IssuePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SyncStatus {
+  IDLE
+  SYNCING
+  SYNCED
+  ERROR
+}
+
+enum WorkCalendarType {
+  BUSINESS_DAYS
+  RUNNING_DAYS
+}
+
+enum CanvasApprovalStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum DependencyType {
+  FS
+  SS
+  FF
+  SF
 }
 
 model ImportJob {

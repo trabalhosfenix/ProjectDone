@@ -3,14 +3,19 @@
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { normalizeItemProgress } from '@/lib/project-progress'
+import { requireProjectAccess } from '@/lib/access-control'
 
 /**
  * Buscar projeto completo com todos os relacionamentos
  */
 export async function getProjectDetails(id: string) {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id },
+    const { user } = await requireProjectAccess(id)
+    const project = await prisma.project.findFirst({
+      where: {
+        id,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      },
       include: {
         createdBy: {
           select: {
@@ -76,10 +81,15 @@ export async function getProjectDetails(id: string) {
  */
 export async function calculateProjectMetrics(projectId: string) {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
+    const { user } = await requireProjectAccess(projectId)
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      },
       include: {
         items: {
+          where: user.tenantId ? { tenantId: user.tenantId } : undefined,
           select: {
             id: true,
             status: true,
@@ -87,6 +97,7 @@ export async function calculateProjectMetrics(projectId: string) {
             weight: true,
             plannedValue: true,
             actualCost: true,
+            duration: true,
             // Datas para cálculo SPI
             datePlanned: true,
             datePlannedEnd: true,
@@ -101,152 +112,164 @@ export async function calculateProjectMetrics(projectId: string) {
       return { success: false, error: 'Projeto não encontrado' }
     }
 
-    // ===== NOVA LÓGICA SPI (REGRA DE DATAS) =====
-    let sumSPI = 0
-    let countConsidered = 0
-    let countLate = 0
-    
-    // Variáveis financeiras acumuladas (se existirem dados)
-    let totalItemPV = 0
-    let totalItemEV = 0
-
+    const items = project.items || []
     const now = new Date()
-    // Zerar hora do 'agora' para comparação justa de datas (apenas dia conta)
     now.setHours(0, 0, 0, 0)
 
-    for (const item of project.items) {
-      // Determinar SPI Individual da Tarefa
-      let itemSPI = 1.0 // Padrão: Em dia
-      let shouldConsider = false
-      let isLate = false
+    const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value))
 
-      // Converter strings/dates para timestamps comparáveis
-      // Se datas não existirem, usamos metadados ou ignoramos? 
-      // Se importou do Excel, tem datas no banco.
-      
-      const dtPlannedEnd = item.datePlannedEnd ? new Date(item.datePlannedEnd) : null
-      const dtActualEnd = item.dateActual ? new Date(item.dateActual) : null
-      
-      if (dtPlannedEnd) {
-          dtPlannedEnd.setHours(0,0,0,0)
-          shouldConsider = true
-
-          if (dtActualEnd) {
-              dtActualEnd.setHours(0,0,0,0)
-              // Cenário 1: Tarefa Concluída
-              if (dtActualEnd.getTime() > dtPlannedEnd.getTime()) {
-                  // Entregou DEPOIS do previsto -> Atraso
-                  itemSPI = 0.9
-                  isLate = true
-              } else {
-                  // Entregou ANTES ou NO DIA -> Adiantado/Em dia (Diff >= 0)
-                  itemSPI = 1.0
-              }
-          } else {
-              // Cenário 2: Tarefa Não Concluída
-              // Se já venceu (Hoje > Planejado) -> Atraso
-              if (now.getTime() > dtPlannedEnd.getTime()) {
-                  itemSPI = 0.9 
-                  isLate = true
-              } else {
-                  // Ainda no prazo
-                  itemSPI = 1.0
-              }
-          }
-      }
-
-      if (shouldConsider) {
-          sumSPI += itemSPI
-          countConsidered++
-      }
-      
-      // Acumular custo real (se necessário para AC)
-      // ...
+    const toDay = (value: Date | string) => {
+      const parsed = new Date(value)
+      parsed.setHours(0, 0, 0, 0)
+      return parsed
     }
 
-    // Cálculo SPI Global (Média)
-    const SPI = countConsidered > 0 ? sumSPI / countConsidered : 1.0 // Começa com 1 (ideal)
+    const diffDays = (a: Date, b: Date) => Math.floor((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24))
 
-    // Valores Financeiros / Pontos para Exibição
-    // Se tiver Budget financeiro, PV total = Budget.
-    // Se não, vamos usar "Pontos" onde cada tarefa vale 1 ponto (ou peso se tivesse).
-    
-    // EV = SPI * PV. 
-    // Como SPI = EV/PV -> EV = SPI * PV.
-    // Vamos definir PV = BAC (Budget Total).
-    // EV = SPI_Calculado * BAC.
-    
-    const BAC = Number(project.budget || 0) > 0 ? Number(project.budget) : countConsidered * 100 // Fallback R$ 100 por tarefa se sem budget
-    const PV = BAC // Planejado Total (simplificação, ou deveria ser PV acumulado até hoje?)
-    
-    // Ajuste: PV deve ser o Valor Planejado ATÉ AGORA para o cálculo classico.
-    // Mas o usuário quer mostrar o calculo da média? "R$ EV / R$ PV = SPI".
-    // Se SPI=0.9 e PV=1000 -> EV=900.
-    
-    // Vamos usar PV Total do Projeto?
-    // Se usarmos PV acumulado, o SPI seria EV_acum / PV_acum.
-    // Mas nossa lógica de média Força o SPI.
-    // Então vamos derivar o EV para bater com a conta.
-    
-    const displayPV = BAC 
-    const displayEV = displayPV * SPI
-    
-    // AC (Custo Real) - Continua sendo soma real ou input do projeto
-    // Calcular AC das tarefas
-    let itemActualCost = project.items.reduce((acc, item) => acc + (item.actualCost || 0), 0)
-    const AC = Number(project.actualCost || 0) + itemActualCost
+    const sumPositivePlannedValue = items.reduce((sum, item) => {
+      const planned = Number(item.plannedValue || 0)
+      return sum + (planned > 0 ? planned : 0)
+    }, 0)
 
-    // Outros índices
-    const CPI = AC > 0 ? displayEV / AC : 0
-    const SV = displayEV - displayPV
-    const CV = displayEV - AC
-    const EAC = CPI > 0 ? BAC / CPI : 0
+    const projectBudget = Number(project.budget || 0)
+    const hasProjectBudget = projectBudget > 0
+
+    const plannedAverage =
+      sumPositivePlannedValue > 0
+        ? sumPositivePlannedValue / Math.max(items.filter((item) => Number(item.plannedValue || 0) > 0).length, 1)
+        : 0
+
+    const weightTotal = items.reduce((sum, item) => {
+      const planned = Number(item.plannedValue || 0)
+      return sum + (planned > 0 ? planned : 1)
+    }, 0)
+
+    const itemBudgets = items.map((item) => {
+      const planned = Number(item.plannedValue || 0)
+
+      if (hasProjectBudget) {
+        if (weightTotal <= 0) return 0
+        const weight = planned > 0 ? planned : 1
+        return projectBudget * (weight / weightTotal)
+      }
+
+      if (sumPositivePlannedValue > 0) {
+        return planned > 0 ? planned : plannedAverage
+      }
+
+      return items.length > 0 ? 100 : 0
+    })
+
+    const BAC = hasProjectBudget ? projectBudget : itemBudgets.reduce((sum, value) => sum + value, 0)
+
+    const resolvePlannedEnd = (item: (typeof items)[number], plannedStart: Date | null) => {
+      if (item.datePlannedEnd) return toDay(item.datePlannedEnd)
+
+      const duration = Number(item.duration || 0)
+      if (plannedStart && Number.isFinite(duration) && duration > 0) {
+        const derived = new Date(plannedStart)
+        derived.setDate(derived.getDate() + Math.max(0, Math.ceil(duration) - 1))
+        return derived
+      }
+
+      return null
+    }
+
+    const plannedRatio = (
+      plannedStart: Date | null,
+      plannedEnd: Date | null,
+      fallbackRatio: number
+    ) => {
+      if (!plannedStart && !plannedEnd) return fallbackRatio
+      if (plannedStart && !plannedEnd) return now >= plannedStart ? 1 : 0
+      if (!plannedStart && plannedEnd) return now > plannedEnd ? 1 : 0
+
+      if (!plannedStart || !plannedEnd) return fallbackRatio
+      if (now <= plannedStart) return 0
+      if (now >= plannedEnd) return 1
+
+      const totalWindow = diffDays(plannedEnd, plannedStart)
+      if (totalWindow <= 0) return now >= plannedEnd ? 1 : 0
+
+      const elapsedWindow = diffDays(now, plannedStart)
+      return clamp(elapsedWindow / totalWindow)
+    }
+
+    let EV = 0
+    let PV = 0
+    let maxOverdueDays = 0
+
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index]
+      const itemBudget = itemBudgets[index] || 0
+
+      const actualProgressRatio = clamp(normalizeItemProgress(item.status, item.metadata) / 100)
+      EV += itemBudget * actualProgressRatio
+
+      const plannedStart = item.datePlanned ? toDay(item.datePlanned) : null
+      const plannedEnd = resolvePlannedEnd(item, plannedStart)
+      PV += itemBudget * plannedRatio(plannedStart, plannedEnd, actualProgressRatio)
+
+      if (plannedEnd && actualProgressRatio < 1 && now > plannedEnd) {
+        maxOverdueDays = Math.max(maxOverdueDays, diffDays(now, plannedEnd))
+      }
+    }
+
+    const itemActualCost = items.reduce((sum, item) => {
+      const value = Number(item.actualCost || 0)
+      return sum + (Number.isFinite(value) ? value : 0)
+    }, 0)
+
+    const projectActualCost = Number(project.actualCost || 0)
+    const AC = projectActualCost > 0 ? projectActualCost : itemActualCost
+
+    const SPI = PV > 0 ? EV / PV : 1
+    const CPI = AC > 0 ? EV / AC : 1
+    const SV = EV - PV
+    const CV = EV - AC
+    const EAC = CPI > 0 ? BAC / CPI : BAC
     const ETC = EAC - AC
     const VAC = BAC - EAC
+    const progress = BAC > 0 ? clamp(EV / BAC, 0, 1) * 100 : 0
 
-    // Delay Days (Atraso) - Mantém lógica ou usa countLate?
-    // Vou manter lógica de dias, mas informativo.
-
-    // Cálculo de atraso em dias (Global)
     let delayDays = 0
     if (project.endDate && project.realEndDate) {
-      const planned = new Date(project.endDate)
-      const real = new Date(project.realEndDate)
-      delayDays = Math.floor((real.getTime() - planned.getTime()) / (1000 * 60 * 60 * 24))
+      delayDays = diffDays(toDay(project.realEndDate), toDay(project.endDate))
+    } else {
+      delayDays = maxOverdueDays
     }
 
-    // Progresso %
-    const progress = (displayEV / BAC) * 100
+    const formatValue = (value: number) => (Number.isFinite(value) ? value.toFixed(2) : '0.00')
 
     return {
       success: true,
       data: {
         // Valores base
-        BAC: BAC.toFixed(2),
-        AC: AC.toFixed(2),
-        EV: displayEV.toFixed(2),
-        PV: displayPV.toFixed(2),
+        BAC: formatValue(BAC),
+        AC: formatValue(AC),
+        EV: formatValue(EV),
+        PV: formatValue(PV),
         
         // Índices
-        SPI: SPI.toFixed(2),
-        CPI: CPI.toFixed(2),
+        SPI: formatValue(SPI),
+        CPI: formatValue(CPI),
         
         // Variâncias
-        SV: SV.toFixed(2),
-        CV: CV.toFixed(2),
+        SV: formatValue(SV),
+        CV: formatValue(CV),
         
         // Estimativas
-        EAC: EAC.toFixed(2),
-        ETC: ETC.toFixed(2),
-        VAC: VAC.toFixed(2),
+        EAC: formatValue(EAC),
+        ETC: formatValue(ETC),
+        VAC: formatValue(VAC),
         
         // Progresso
-        progress: progress.toFixed(2),
+        progress: formatValue(progress),
         delayDays,
         
         // Status
-        scheduleStatus: SPI >= 0.95 ? 'on-track' : SPI >= 0.85 ? 'warning' : 'critical',
-        costStatus: CPI >= 0.95 ? 'on-track' : CPI >= 0.85 ? 'warning' : 'critical'
+        scheduleStatus: SPI >= 1 ? 'on-track' : SPI >= 0.9 ? 'warning' : 'critical',
+        costStatus: CPI >= 1 ? 'on-track' : CPI >= 0.9 ? 'warning' : 'critical'
       }
     }
   } catch (error) {
@@ -267,6 +290,7 @@ export async function createProjectRecord(data: {
   attachmentName?: string | null
 }) {
   try {
+    await requireProjectAccess(data.projectId)
     const record = await prisma.projectRecord.create({
       data,
       include: {
@@ -300,6 +324,13 @@ export async function updateProjectRecord(
   }>
 ) {
   try {
+    const current = await prisma.projectRecord.findUnique({
+      where: { id },
+      select: { projectId: true },
+    })
+    if (!current?.projectId) return { success: false, error: 'Registro não encontrado' }
+    await requireProjectAccess(current.projectId)
+
     const record = await prisma.projectRecord.update({
       where: { id },
       data,
@@ -334,6 +365,7 @@ export async function deleteProjectRecord(id: string) {
     if (!record) {
       return { success: false, error: 'Registro não encontrado' }
     }
+    await requireProjectAccess(record.projectId)
 
     await prisma.projectRecord.delete({ where: { id } })
 
@@ -350,6 +382,7 @@ export async function deleteProjectRecord(id: string) {
  */
 export async function getProjectDependencies(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
     const dependencies = await prisma.projectDependency.findMany({
       where: { projectId },
       include: {
@@ -380,6 +413,8 @@ export async function createProjectDependency(data: {
   type?: string
 }) {
   try {
+    await requireProjectAccess(data.projectId)
+    await requireProjectAccess(data.dependsOnProjectId)
     const dependency = await prisma.projectDependency.create({
       data,
       include: {
@@ -410,6 +445,7 @@ export async function deleteProjectDependency(id: string) {
     if (!dependency) {
       return { success: false, error: 'Dependência não encontrada' }
     }
+    await requireProjectAccess(dependency.projectId)
 
     await prisma.projectDependency.delete({ where: { id } })
 
@@ -426,8 +462,12 @@ export async function deleteProjectDependency(id: string) {
  */
 export async function getProjectSituationStats(projectId: string) {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
+    const { user } = await requireProjectAccess(projectId)
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      },
       select: {
           id: true,
           name: true,
@@ -449,7 +489,7 @@ export async function getProjectSituationStats(projectId: string) {
 
     // 1. Calcular Duração Real (Unindo datas dos itens) e Progresso Real (Média?)
     const items = await prisma.projectItem.findMany({
-        where: { projectId },
+        where: { projectId, ...(user.tenantId ? { tenantId: user.tenantId } : {}) },
         select: {
             dateActualStart: true,
             dateActual: true, // End Real
@@ -549,6 +589,7 @@ export async function getProjectSituationStats(projectId: string) {
  */
 export async function getProjectCriticalItems(projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
     const now = new Date()
     now.setHours(0, 0, 0, 0)
     
@@ -556,6 +597,7 @@ export async function getProjectCriticalItems(projectId: string) {
     const items = await prisma.projectItem.findMany({
       where: {
         projectId,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
         OR: [
           { isCritical: true }, // Críticas
           { 

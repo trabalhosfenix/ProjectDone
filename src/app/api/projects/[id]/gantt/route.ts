@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { AccessError, requireProjectAccess } from '@/lib/access-control'
 
 type RawTask = {
   id: string
@@ -44,9 +45,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    const { user } = await requireProjectAccess(id)
 
     const sourceTasks = await prisma.projectItem.findMany({
-      where: { projectId: id },
+      where: {
+        projectId: id,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      },
       orderBy: [{ wbs: 'asc' }, { createdAt: 'asc' }],
       select: {
         id: true,
@@ -114,6 +119,9 @@ export async function GET(
       },
     })
   } catch (error) {
+    if (error instanceof AccessError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+    }
     console.error('Erro ao montar dados de Gantt do projeto:', error)
     return NextResponse.json({ success: false, error: 'Falha ao buscar dados de Gantt local' }, { status: 500 })
   }

@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { calculateEndDate, isWorkingDay, WorkCalendarConfig } from '@/lib/calendar-engine'
+import { requireProjectAccess } from '@/lib/access-control'
 
 type ItemState = {
   start: Date
@@ -142,6 +143,7 @@ function getCalendarConfig(project: ProjectWithCalendar | null): WorkCalendarCon
 
 export async function recalculateProjectSchedule(projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
     const project = await prisma.project.findUnique({
       where: { id: projectId },
       include: {
@@ -154,7 +156,7 @@ export async function recalculateProjectSchedule(projectId: string) {
     const config = getCalendarConfig(project)
 
     const items = await prisma.projectItem.findMany({
-      where: { projectId },
+      where: { projectId, ...(user.tenantId ? { tenantId: user.tenantId } : {}) },
       orderBy: [{ wbs: 'asc' }, { createdAt: 'asc' }],
     })
 

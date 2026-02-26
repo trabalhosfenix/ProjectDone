@@ -2,9 +2,11 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { requireProjectAccess } from '@/lib/access-control'
 
 export async function saveImportedTasks(projectId: string, tasks: any[]) {
   try {
+    const { project, user } = await requireProjectAccess(projectId)
     if (!projectId || !tasks || tasks.length === 0) {
       return { success: false, error: 'Dados inválidos' }
     }
@@ -16,6 +18,7 @@ export async function saveImportedTasks(projectId: string, tasks: any[]) {
     // Preparar dados
     const dataToCreate = tasks.map(t => ({
       projectId,
+      tenantId: project.tenantId || user.tenantId || undefined,
       task: t.name,
       originSheet: 'PROJECT',
       status: t.progress === 1 ? 'Concluído' : t.progress > 0 ? 'Em Andamento' : 'A Fazer',

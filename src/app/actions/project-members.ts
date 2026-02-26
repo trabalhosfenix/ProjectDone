@@ -2,13 +2,16 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { requireProjectAccess } from '@/lib/access-control'
+import { hasPermission, PERMISSIONS } from '@/lib/permissions'
 
 // ... (funções anteriores getProjectMembers, addProjectMember, removeProjectMember)
 
 export async function getProjectMembers(projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
     const members = await prisma.projectMember.findMany({
-      where: { projectId },
+      where: { projectId, ...(user.tenantId ? { tenantId: user.tenantId } : {}) },
       include: {
         user: {
           select: {
@@ -27,14 +30,83 @@ export async function getProjectMembers(projectId: string) {
   }
 }
 
+export async function getAvailableProjectUsers(projectId: string) {
+  try {
+    const { project, user: currentUser } = await requireProjectAccess(projectId)
+    const expectedTenantId = project.tenantId || currentUser.tenantId || null
+
+    const existingMembers = await prisma.projectMember.findMany({
+      where: { projectId },
+      select: { userId: true },
+    })
+
+    const existingUserIds = existingMembers.map((member) => member.userId)
+
+    const users = await prisma.user.findMany({
+      where: {
+        ...(expectedTenantId ? { tenantId: expectedTenantId } : {}),
+        ...(existingUserIds.length > 0 ? { id: { notIn: existingUserIds } } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+      orderBy: [
+        { name: 'asc' },
+        { email: 'asc' },
+      ],
+    })
+
+    return { success: true, data: users }
+  } catch (error) {
+    console.error('Erro ao buscar usuários elegíveis para o projeto:', error)
+    return { success: false, error: 'Falha ao carregar usuários disponíveis' }
+  }
+}
+
 export async function addProjectMember(projectId: string, email: string, role: string) {
   try {
-    const user = await prisma.user.findUnique({
-      where: { email }
-    })
+    const { project, user: currentUser } = await requireProjectAccess(projectId)
+
+    const canManagePeople = currentUser.role === 'ADMIN' || await hasPermission(currentUser.id, PERMISSIONS.MANAGE_PEOPLE)
+    if (!canManagePeople) {
+      return { success: false, error: 'Sem permissão para gerenciar envolvidos do projeto' }
+    }
+
+    const normalizedEmail = email.trim().toLowerCase()
+    const expectedTenantId = project.tenantId || currentUser.tenantId || null
+
+    const user = expectedTenantId
+      ? await prisma.user.findUnique({
+          where: {
+            tenantId_email: {
+              tenantId: expectedTenantId,
+              email: normalizedEmail,
+            },
+          },
+          select: {
+            id: true,
+            tenantId: true,
+          },
+        })
+      : await prisma.user.findFirst({
+          where: {
+            email: normalizedEmail,
+          },
+          select: {
+            id: true,
+            tenantId: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        })
 
     if (!user) {
       return { success: false, error: 'Usuário não encontrado com este email' }
+    }
+
+    if (expectedTenantId && user.tenantId !== expectedTenantId) {
+      return { success: false, error: 'Somente usuários da mesma conta (tenant) podem ser vinculados ao projeto' }
     }
 
     const existingMember = await prisma.projectMember.findUnique({
@@ -54,7 +126,8 @@ export async function addProjectMember(projectId: string, email: string, role: s
       data: {
         projectId,
         userId: user.id,
-        role
+        role,
+        tenantId: project.tenantId || currentUser.tenantId || undefined,
       }
     })
 
@@ -69,6 +142,20 @@ export async function addProjectMember(projectId: string, email: string, role: s
 
 export async function removeProjectMember(memberId: string, projectId: string) {
   try {
+    const { user } = await requireProjectAccess(projectId)
+
+    const canManagePeople = user.role === 'ADMIN' || await hasPermission(user.id, PERMISSIONS.MANAGE_PEOPLE)
+    if (!canManagePeople) {
+      return { success: false, error: 'Sem permissão para gerenciar envolvidos do projeto' }
+    }
+
+    const existing = await prisma.projectMember.findUnique({
+      where: { id: memberId },
+      select: { projectId: true, tenantId: true },
+    })
+    if (!existing || existing.projectId !== projectId || (user.tenantId && existing.tenantId && existing.tenantId !== user.tenantId)) {
+      return { success: false, error: 'Acesso negado ao membro' }
+    }
     await prisma.projectMember.delete({
       where: { id: memberId }
     })
@@ -83,6 +170,20 @@ export async function removeProjectMember(memberId: string, projectId: string) {
 
 export async function updateMemberAllocation(memberId: string, projectId: string, data: { effort?: number, cost?: number, revenue?: number }) {
   try {
+    const { user } = await requireProjectAccess(projectId)
+
+    const canManagePeople = user.role === 'ADMIN' || await hasPermission(user.id, PERMISSIONS.MANAGE_PEOPLE)
+    if (!canManagePeople) {
+      return { success: false, error: 'Sem permissão para atualizar alocação de envolvidos' }
+    }
+
+    const existing = await prisma.projectMember.findUnique({
+      where: { id: memberId },
+      select: { projectId: true, tenantId: true },
+    })
+    if (!existing || existing.projectId !== projectId || (user.tenantId && existing.tenantId && existing.tenantId !== user.tenantId)) {
+      return { success: false, error: 'Acesso negado ao membro' }
+    }
     await prisma.projectMember.update({
       where: { id: memberId },
       data: {

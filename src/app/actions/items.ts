@@ -6,10 +6,16 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { syncProjectProgress } from '@/lib/project-progress'
 import { syncStatusAndProgress } from '@/lib/project-item-flow'
+import { requireAuth } from "@/lib/access-control";
+import { buildProjectItemScope } from "@/lib/access-scopes";
 
 export async function getProjectItems() {
   try {
+    const currentUser = await requireAuth();
+    const where = buildProjectItemScope(currentUser);
+
     return await prisma.projectItem.findMany({
+      where,
       orderBy: { createdAt: "desc" },
     });
   } catch (error) {
@@ -200,9 +206,13 @@ export async function deleteStatusOption(id: number) {
 export async function createProjectItem(data: { task: string, status: string, originSheet: string, projectId?: string, wbs?: string }) {
   try {
     const session = await getServerSession(authOptions);
+    const project = data.projectId
+      ? await prisma.project.findUnique({ where: { id: data.projectId }, select: { tenantId: true } })
+      : null
     const item = await prisma.projectItem.create({
       data: {
         ...data,
+        tenantId: project?.tenantId || undefined,
         wbs: data.wbs?.trim() || null,
         priority: "Média"
       }

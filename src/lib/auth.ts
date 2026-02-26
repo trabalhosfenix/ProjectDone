@@ -24,10 +24,14 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Credenciais inválidas");
         }
 
-        // Optimization: Fetch user AND role/permissions in a single query
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-          include: { userRole: true } 
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+
+        // Fetch user and permissions in one query.
+        // Email is unique per tenant in this schema, not globally.
+        const user = await prisma.user.findFirst({
+          where: { email: normalizedEmail },
+          include: { userRole: true },
+          orderBy: { createdAt: "asc" },
         });
 
         if (!user || !user.password) {
@@ -49,6 +53,7 @@ export const authOptions: NextAuthOptions = {
           name: user.name,
           email: user.email,
           role: user.role,
+          tenantId: user.tenantId || null,
           permissions: user.userRole?.permissions || null
         };
       },
@@ -60,6 +65,7 @@ export const authOptions: NextAuthOptions = {
         // Initial sign in - use data from authorize
         token.id = user.id;
         token.role = (user as any).role;
+        token.tenantId = (user as any).tenantId || null;
         token.permissions = (user as any).permissions;
       }
       return token;
@@ -68,6 +74,7 @@ export const authOptions: NextAuthOptions = {
       if (token && session.user) {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
+        (session.user as any).tenantId = (token as any).tenantId || null;
         (session.user as any).permissions = token.permissions;
       }
       return session;

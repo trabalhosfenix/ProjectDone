@@ -105,3 +105,106 @@ Além do fluxo interno, há integração com uma API externa de MPP para importa
 A base técnica já está relativamente madura para um SaaS de gestão de projetos orientado a tarefas com integração MPP. O principal gap não parece ser falta de funcionalidades, mas sim **padronização, testabilidade e operacionalização em escala** (documentação, testes, observabilidade e consistência arquitetural).
 
 Com ajustes nessas frentes, o produto tende a ganhar previsibilidade, facilidade de manutenção e confiança para crescer em volume de projetos e usuários.
+
+---
+
+## Análise SaaS Multi-tenant e Isolamento de Acesso
+
+### 1) Multi-tenant: o que existe hoje vs. o que falta
+
+#### O que existe
+
+- A integração com MPP aceita tenant via header `x-tenant-id` no client HTTP (`src/lib/mpp-api.ts`).
+- Rotas de integração/sync leem `x-tenant-id` e repassam para chamadas MPP (ex.: `src/app/api/mpp/sync-project/route.ts`).
+
+#### O que falta (crítico)
+
+- Não há entidade `Tenant` no schema Prisma e não há `tenantId` nas entidades centrais (`User`, `Project`, `ProjectItem`, `Role`, etc.) em `prisma/schema.prisma`.
+- Sem `tenantId` persistido, não há como aplicar escopo estrutural obrigatório nas queries (`where: { tenantId: ... }`).
+
+#### Conclusão
+
+- Hoje existe multi-tenant **na integração MPP**.
+- Ainda não existe multi-tenant **no produto/banco de dados do SaaS**.
+
+### 2) Usuários estão isolados com seus projetos?
+
+#### Estado atual
+
+- Não de forma robusta.
+- `getProjects()` e `getProjectById()` consultam projetos sem escopo por tenant e sem enforcement por membership (`src/app/actions/projects.ts`).
+- Há consultas por ID em rotas/actions sem validação consistente de acesso por membro/dono no recurso.
+
+#### Pontos positivos
+
+- Existe modelagem de membership (`ProjectMember`) no schema (`prisma/schema.prisma`), que permite isolamento por projeto.
+
+#### Gap principal
+
+- A estrutura existe, mas o enforcement não é aplicado de forma transversal em todas as rotas/actions.
+
+### 3) Tipos de usuário e acessos (estado atual)
+
+#### Perfis e autenticação
+
+- Usuário possui `role` (ex.: `ADMIN`, `USER`) e `roleId` opcional com permissões em JSON via `Role.permissions` (`prisma/schema.prisma`).
+- Sessão JWT inclui `id`, `role` e `permissions` (`src/lib/auth.ts`).
+
+#### Gate atual
+
+- Middleware exige autenticação para `/dashboard/*` (`src/middleware.ts`).
+- Fluxos administrativos exigem `role === "ADMIN"` em partes do sistema.
+
+#### Lacunas de autorização
+
+- A proteção no middleware não cobre automaticamente autorização por recurso em API routes.
+- Há endpoints de integração/sync sem validação explícita e uniforme de sessão + autorização contextual (ex.: `src/app/api/mpp/sync-project/route.ts`).
+
+### 4) O fluxo condiz com SaaS para empresas diferentes?
+
+#### Parcialmente
+
+- A autenticação funciona e há base de permissões.
+- Para cenário B2B multiempresa com isolamento forte, o risco ainda é alto sem tenant no banco e sem autorização contextual padronizada.
+
+#### Pilares que faltam
+
+- Isolamento estrutural por tenant no banco e nas queries.
+- Autorização por contexto (tenant + projeto + papel/permissão).
+- Guardas homogêneas em API routes e Server Actions.
+- Política única de autorização para evitar lógica espalhada.
+
+### 5) Recomendação prática (ordem de implementação)
+
+#### Fase 1 - Modelo de dados e migração
+
+1. Criar `Tenant` no Prisma.
+2. Adicionar `tenantId` em `User`, `Project`, `ProjectItem`, `Role`, `ImportedProject` e demais entidades de domínio.
+3. Criar índices compostos com `tenantId` nas entidades críticas.
+
+#### Fase 2 - Enforcement obrigatório
+
+1. Introduzir guardas centrais:
+   - `requireAuth()`
+   - `requireTenantAccess()`
+   - `requireProjectAccess(projectId, permission)`
+2. Aplicar escopo obrigatório (`tenantId` + membership/permissão) em toda leitura/mutação sensível.
+3. Fechar endpoints sem validação explícita de auth/autz.
+
+#### Fase 3 - RBAC consistente
+
+1. Centralizar interpretação de `Role.permissions` em uma camada única.
+2. Remover checks ad hoc distribuídos pela aplicação.
+3. Padronizar resposta de erro de autorização (`401/403`) e logging.
+
+#### Fase 4 - Segurança e conformidade operacional
+
+1. Testes de segurança multi-tenant (tentativas cross-tenant).
+2. Testes de autorização por membership/permissão.
+3. Auditoria contínua de rotas/actions para evitar regressão.
+
+## Resumo executivo
+
+- O sistema está pronto para evoluir para multi-tenant real, pois já tem boa base de domínio e membership.
+- O principal risco atual é isolamento incompleto no plano de dados e autorização não homogênea.
+- A prioridade deve ser: `Tenant + tenantId` no schema, seguido de enforcement centralizado de acesso em todas as entradas (API/actions).

@@ -2,11 +2,13 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { requireAuth } from '@/lib/access-control'
 
 // --- Calendários ---
 
 export async function getCalendars() {
   try {
+    await requireAuth()
     const calendars = await prisma.workCalendar.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
@@ -24,6 +26,7 @@ export async function getCalendars() {
 
 export async function getCalendar(id: string) {
   try {
+    await requireAuth()
     const calendar = await prisma.workCalendar.findUnique({
       where: { id },
       include: {
@@ -46,6 +49,8 @@ export async function createCalendar(data: {
   description?: string
 }) {
   try {
+    const user = await requireAuth()
+    if (user.role !== 'ADMIN') return { success: false, error: 'Apenas administradores podem criar calendário' }
     const calendar = await prisma.workCalendar.create({
       data
     })
@@ -65,6 +70,8 @@ export async function updateCalendar(id: string, data: {
   isDefault?: boolean
 }) {
   try {
+    const user = await requireAuth()
+    if (user.role !== 'ADMIN') return { success: false, error: 'Apenas administradores podem atualizar calendário' }
     // Se for marcar como default, desmarcar outros
     if (data.isDefault) {
       await prisma.workCalendar.updateMany({
@@ -87,6 +94,8 @@ export async function updateCalendar(id: string, data: {
 
 export async function deleteCalendar(id: string) {
   try {
+    const user = await requireAuth()
+    if (user.role !== 'ADMIN') return { success: false, error: 'Apenas administradores podem excluir calendário' }
     await prisma.workCalendar.delete({
       where: { id }
     })
@@ -106,6 +115,8 @@ export async function addHoliday(calendarId: string, data: {
   recurring?: boolean
 }) {
   try {
+    const user = await requireAuth()
+    if (user.role !== 'ADMIN') return { success: false, error: 'Apenas administradores podem adicionar feriado' }
     const holiday = await prisma.calendarHoliday.create({
       data: {
         calendarId,
@@ -122,6 +133,8 @@ export async function addHoliday(calendarId: string, data: {
 
 export async function deleteHoliday(id: string) {
   try {
+    const user = await requireAuth()
+    if (user.role !== 'ADMIN') return { success: false, error: 'Apenas administradores podem remover feriado' }
     // Buscar calendarId para revalidate
     const holiday = await prisma.calendarHoliday.findUnique({
       where: { id },

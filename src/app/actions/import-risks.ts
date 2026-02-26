@@ -4,6 +4,7 @@
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import * as XLSX from 'xlsx'
+import { requireProjectAccess } from '@/lib/access-control'
 
 function classifyRisk(probability: number, impact: number) {
   const severity = probability * impact
@@ -23,6 +24,7 @@ export async function importRisksExcel(formData: FormData) {
   }
 
   try {
+    await requireProjectAccess(projectId)
     const arrayBuffer = await file.arrayBuffer()
     const workbook = XLSX.read(arrayBuffer, { type: 'array' })
     const sheetName = workbook.SheetNames[0]

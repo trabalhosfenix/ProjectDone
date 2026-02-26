@@ -2,6 +2,94 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { buildProjectScope, requireAuth, requireProjectAccess } from "@/lib/access-control";
+import type { PriorityLevel, ProjectStatus } from "@prisma/client";
+
+const PROJECT_STATUS_VALUES: ProjectStatus[] = ["A_INICIAR", "EM_ANDAMENTO", "CONCLUIDO", "PARADO"];
+const PRIORITY_VALUES: PriorityLevel[] = ["BAIXA", "MEDIA", "ALTA"];
+
+const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
+  A_INICIAR: "A iniciar",
+  EM_ANDAMENTO: "Andamento",
+  CONCLUIDO: "Concluído",
+  PARADO: "Parado",
+};
+
+const PRIORITY_LABELS: Record<PriorityLevel, string> = {
+  BAIXA: "Baixa",
+  MEDIA: "Média",
+  ALTA: "Alta",
+};
+
+function normalizeEnumInput(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function toProjectStatus(value?: string | null): ProjectStatus {
+  if (!value) return "A_INICIAR";
+
+  const raw = String(value).trim().toUpperCase();
+  if ((PROJECT_STATUS_VALUES as string[]).includes(raw)) {
+    return raw as ProjectStatus;
+  }
+
+  const normalized = normalizeEnumInput(value);
+  if (["a iniciar", "ainiciar", "nao iniciado", "em planejamento", "planejamento"].includes(normalized)) {
+    return "A_INICIAR";
+  }
+
+  if (["andamento", "em andamento", "em execucao", "execucao", "in progress", "progress"].includes(normalized)) {
+    return "EM_ANDAMENTO";
+  }
+
+  if (["concluido", "done", "completed", "finalizado"].includes(normalized)) {
+    return "CONCLUIDO";
+  }
+
+  if (["parado", "pausado", "cancelado", "cancelada", "atraso", "em atraso", "atrasado"].includes(normalized)) {
+    return "PARADO";
+  }
+
+  return "A_INICIAR";
+}
+
+function toPriorityLevel(value?: string | null): PriorityLevel {
+  if (!value) return "MEDIA";
+
+  const raw = String(value).trim().toUpperCase();
+  if ((PRIORITY_VALUES as string[]).includes(raw)) {
+    return raw as PriorityLevel;
+  }
+
+  const normalized = normalizeEnumInput(value);
+  if (["baixa", "low"].includes(normalized)) return "BAIXA";
+  if (["alta", "high", "critica", "critical", "urgente"].includes(normalized)) return "ALTA";
+  return "MEDIA";
+}
+
+function fromProjectStatus(value?: ProjectStatus | string | null): string {
+  if (!value) return PROJECT_STATUS_LABELS.A_INICIAR;
+  const normalized = String(value);
+  if ((PROJECT_STATUS_VALUES as string[]).includes(normalized)) {
+    return PROJECT_STATUS_LABELS[normalized as ProjectStatus];
+  }
+  return normalized;
+}
+
+function fromPriorityLevel(value?: PriorityLevel | string | null): string {
+  if (!value) return PRIORITY_LABELS.MEDIA;
+  const normalized = String(value);
+  if ((PRIORITY_VALUES as string[]).includes(normalized)) {
+    return PRIORITY_LABELS[normalized as PriorityLevel];
+  }
+  return normalized;
+}
 
 // Tipos
 export type ProjectFilters = {
@@ -16,18 +104,24 @@ export type ProjectFilters = {
 // Listar projetos com filtros
 export async function getProjects(filters?: ProjectFilters) {
   try {
+    const currentUser = await requireAuth();
     const where: any = {};
+    const scope = buildProjectScope(currentUser);
+    Object.assign(where, scope);
 
     if (filters?.search) {
-      where.OR = [
-        { name: { contains: filters.search, mode: "insensitive" } },
-        { description: { contains: filters.search, mode: "insensitive" } },
-        { code: { contains: filters.search, mode: "insensitive" } },
-      ];
+      const searchClause = {
+        OR: [
+          { name: { contains: filters.search, mode: "insensitive" } },
+          { description: { contains: filters.search, mode: "insensitive" } },
+          { code: { contains: filters.search, mode: "insensitive" } },
+        ],
+      };
+      where.AND = [...(where.AND || []), searchClause];
     }
 
     if (filters?.status && filters.status.length > 0) {
-      where.status = { in: filters.status };
+      where.status = { in: filters.status.map((status) => toProjectStatus(status)) };
     }
 
     if (filters?.area && filters.area.length > 0) {
@@ -70,7 +164,13 @@ export async function getProjects(filters?: ProjectFilters) {
       orderBy: { createdAt: "desc" },
     });
 
-    return { success: true, projects };
+    const normalizedProjects = projects.map((project) => ({
+      ...project,
+      status: fromProjectStatus(project.status),
+      priority: fromPriorityLevel(project.priority),
+    }));
+
+    return { success: true, projects: normalizedProjects };
   } catch (error) {
     console.error("Error fetching projects:", error);
     return { success: false, error: "Erro ao buscar projetos" };
@@ -80,8 +180,10 @@ export async function getProjects(filters?: ProjectFilters) {
 // Buscar projeto por ID
 export async function getProjectById(id: string) {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id },
+    const currentUser = await requireAuth();
+    const scope = buildProjectScope(currentUser);
+    const project = await prisma.project.findFirst({
+      where: { id, ...scope },
       include: {
         items: {
           orderBy: { createdAt: "desc" },
@@ -97,7 +199,14 @@ export async function getProjectById(id: string) {
       return { success: false, error: "Projeto não encontrado" };
     }
 
-    return { success: true, project };
+    return {
+      success: true,
+      project: {
+        ...project,
+        status: fromProjectStatus(project.status),
+        priority: fromPriorityLevel(project.priority),
+      },
+    };
   } catch (error) {
     console.error("Error fetching project:", error);
     return { success: false, error: "Erro ao buscar projeto" };
@@ -124,12 +233,15 @@ export async function createProject(data: {
   priority?: string;
 }) {
   try {
+    const currentUser = await requireAuth();
     const project = await prisma.project.create({
       data: {
         ...data,
+        tenantId: currentUser.tenantId || undefined,
+        createdById: currentUser.id,
         code: data.code || `PRJ-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
-        status: data.status || "A iniciar",
-        priority: data.priority || "Média",
+        status: toProjectStatus(data.status),
+        priority: toPriorityLevel(data.priority),
       },
     });
 
@@ -178,9 +290,18 @@ export async function updateProject(
   }>
 ) {
   try {
+    await requireProjectAccess(id);
+    const normalizedData = { ...data };
+    if (typeof data.status === "string") {
+      normalizedData.status = toProjectStatus(data.status);
+    }
+    if (typeof data.priority === "string") {
+      normalizedData.priority = toPriorityLevel(data.priority);
+    }
+
     const project = await prisma.project.update({
       where: { id },
-      data,
+      data: normalizedData,
     });
 
     revalidatePath("/dashboard");
@@ -203,6 +324,7 @@ export async function updateProject(
 // Deletar projeto
 export async function deleteProject(id: string) {
   try {
+    await requireProjectAccess(id);
     // Verificar se tem tarefas associadas
     const project = await prisma.project.findUnique({
       where: { id },
@@ -239,7 +361,10 @@ export async function deleteProject(id: string) {
 // Obter opções únicas para filtros
 export async function getProjectFilterOptions() {
   try {
+    const currentUser = await requireAuth();
+    const where = buildProjectScope(currentUser);
     const projects = await prisma.project.findMany({
+      where,
       select: {
         status: true,
         area: true,
@@ -249,7 +374,7 @@ export async function getProjectFilterOptions() {
       },
     });
 
-    const statuses = [...new Set(projects.map((p) => p.status).filter(Boolean))];
+    const statuses = [...new Set(projects.map((p) => fromProjectStatus(p.status)).filter(Boolean))];
     const areas = [...new Set(projects.map((p) => p.area).filter(Boolean))];
     const types = [...new Set(projects.map((p) => p.type).filter(Boolean))];
     const programs = [...new Set(projects.map((p) => p.program).filter(Boolean))];
@@ -274,8 +399,11 @@ export async function getProjectFilterOptions() {
 // Estatísticas de projetos
 export async function getProjectStats() {
   try {
-    const total = await prisma.project.count();
+    const currentUser = await requireAuth();
+    const where = buildProjectScope(currentUser);
+    const total = await prisma.project.count({ where });
     const byStatus = await prisma.project.groupBy({
+      where,
       by: ["status"],
       _count: true,
     });
@@ -283,7 +411,7 @@ export async function getProjectStats() {
     const stats = {
       total,
       byStatus: byStatus.reduce((acc, item) => {
-        acc[item.status] = item._count;
+        acc[fromProjectStatus(item.status)] = item._count;
         return acc;
       }, {} as Record<string, number>),
     };

@@ -2,7 +2,6 @@
 
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 
 interface ProjectPageHeaderProps {
     title: string
@@ -13,8 +12,6 @@ interface ProjectPageHeaderProps {
 }
 
 export function ProjectPageHeader({ title, description, projectId, backLink, children }: ProjectPageHeaderProps) {
-    const router = useRouter()
-    
     // Default fallback if no link provided: go back in history or to dashboard
     // But for now, if projectId exists, use project dashboard.
     // If backLink exists, use it.

@@ -1,29 +1,40 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Trash2, UserPlus, Mail, Shield, User, Lock } from 'lucide-react'
+import { Trash2, UserPlus, Mail, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 import { addProjectMember, removeProjectMember } from '@/app/actions/project-members'
 import { UserRegistrationDialog } from '@/components/users/user-registration-dialog'
 
+type AvailableUser = {
+  id: string
+  name: string | null
+  email: string
+}
+
 interface ProjectMembersProps {
   projectId: string
   members: any[]
+  availableUsers: AvailableUser[]
 }
 
-export function ProjectMembersList({ projectId, members }: ProjectMembersProps) {
+export function ProjectMembersList({ projectId, members, availableUsers }: ProjectMembersProps) {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('Equipe')
   const [loading, setLoading] = useState(false)
 
   // Registration Dialog State
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const matchedUser = availableUsers.find((user) => user.email.toLowerCase() === email.toLowerCase())
+  const selectedUserValue = matchedUser ? `user:${matchedUser.email}` : 'manual'
 
   const handleAddMember = async () => {
     if (!email) {
@@ -41,6 +52,7 @@ export function ProjectMembersList({ projectId, members }: ProjectMembersProps) 
     if (result.success) {
         toast.success(result.message)
         setEmail('')
+        router.refresh()
     } else if (result.error === 'Usuário não encontrado com este email') {
         // Open Complete Registration Dialog
         setIsDialogOpen(true)
@@ -59,6 +71,7 @@ export function ProjectMembersList({ projectId, members }: ProjectMembersProps) 
      if (result.success) {
          toast.success(`Usuário cadastrado e adicionado como ${role}!`)
          setEmail('')
+         router.refresh()
      } else {
          toast.error('Usuário cadastrado, mas erro ao vincular ao projeto: ' + result.error)
      }
@@ -69,6 +82,7 @@ export function ProjectMembersList({ projectId, members }: ProjectMembersProps) 
       const result = await removeProjectMember(memberId, projectId)
       if (result.success) {
         toast.success(result.message)
+        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -99,6 +113,34 @@ export function ProjectMembersList({ projectId, members }: ProjectMembersProps) 
           <div className="space-y-4">
              <div className="flex flex-col sm:flex-row gap-4 items-end">
                 <div className="w-full sm:flex-1 space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Usuários da Conta (Mesmo Tenant)
+                  </label>
+                  <Select
+                    value={selectedUserValue}
+                    onValueChange={(value) => {
+                      if (value === 'manual') {
+                        setEmail('')
+                        return
+                      }
+                      if (value.startsWith('user:')) {
+                        setEmail(value.slice(5))
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um usuário da mesma conta..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manual">Digitar email manualmente</SelectItem>
+                      {availableUsers.map((user) => (
+                        <SelectItem key={user.id} value={`user:${user.email}`}>
+                          {(user.name || 'Sem nome')} - {user.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
                   <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
                     <Mail className="w-4 h-4" /> Email do Usuário
                   </label>

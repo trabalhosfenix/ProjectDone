@@ -2,11 +2,13 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import { requireProjectAccess } from '@/lib/access-control'
 
 // ========= METAS DE QUALIDADE =========
 
 export async function getProjectGoals(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
     const goals = await prisma.projectGoal.findMany({
       where: { projectId },
       orderBy: { createdAt: 'desc' },
@@ -20,6 +22,7 @@ export async function getProjectGoals(projectId: string) {
 
 export async function createProjectGoal(projectId: string, data: any) {
   try {
+    await requireProjectAccess(projectId)
     await prisma.projectGoal.create({
       data: {
         projectId,
@@ -50,6 +53,11 @@ export async function createProjectGoal(projectId: string, data: any) {
 
 export async function updateProjectGoal(goalId: string, projectId: string, data: any) {
   try {
+    await requireProjectAccess(projectId)
+    const existing = await prisma.projectGoal.findUnique({ where: { id: goalId }, select: { projectId: true } })
+    if (!existing || existing.projectId !== projectId) {
+      return { success: false, error: 'Acesso negado à meta' }
+    }
     await prisma.projectGoal.update({
       where: { id: goalId },
       data: {
@@ -80,6 +88,11 @@ export async function updateProjectGoal(goalId: string, projectId: string, data:
 
 export async function deleteProjectGoal(goalId: string, projectId: string) {
   try {
+    await requireProjectAccess(projectId)
+    const existing = await prisma.projectGoal.findUnique({ where: { id: goalId }, select: { projectId: true } })
+    if (!existing || existing.projectId !== projectId) {
+      return { success: false, error: 'Acesso negado à meta' }
+    }
     await prisma.projectGoal.delete({
       where: { id: goalId }
     })
@@ -94,6 +107,7 @@ export async function deleteProjectGoal(goalId: string, projectId: string) {
 
 export async function getProjectDocuments(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
     const documents = await prisma.projectDocument.findMany({
       where: { projectId },
       orderBy: { createdAt: 'desc' },
@@ -107,6 +121,7 @@ export async function getProjectDocuments(projectId: string) {
 
 export async function createProjectDocument(projectId: string, data: any) {
   try {
+    await requireProjectAccess(projectId)
     await prisma.projectDocument.create({
       data: {
         projectId,
@@ -131,6 +146,11 @@ export async function createProjectDocument(projectId: string, data: any) {
 
 export async function deleteProjectDocument(docId: string, projectId: string) {
   try {
+    await requireProjectAccess(projectId)
+    const existing = await prisma.projectDocument.findUnique({ where: { id: docId }, select: { projectId: true } })
+    if (!existing || existing.projectId !== projectId) {
+      return { success: false, error: 'Acesso negado ao documento' }
+    }
     await prisma.projectDocument.delete({
       where: { id: docId }
     })

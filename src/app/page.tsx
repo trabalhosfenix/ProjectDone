@@ -219,7 +219,7 @@ export default function Home() {
 
       <footer className="w-full py-6 bg-[#094160] text-white border-t border-white/10">
         <div className="container mx-auto max-w-7xl px-4 md:px-6 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-xs text-gray-300">© 2025 Consultoria Premium. Todos os direitos reservados.</p>
+          <p className="text-xs text-gray-300">© 2026 Consultoria Premium. Todos os direitos reservados.</p>
           <nav className="flex gap-4 sm:gap-6">
             <Link className="text-xs hover:underline underline-offset-4 text-gray-300" href="#">
               Termos de Uso

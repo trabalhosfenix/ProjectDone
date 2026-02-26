@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { calculateEndDate, calculateDuration, WorkCalendarConfig } from '@/lib/calendar-engine'
 import { syncProjectProgress } from '@/lib/project-progress'
 import { syncStatusAndProgress } from '@/lib/project-item-flow'
+import { AccessError, requireProjectAccess } from '@/lib/access-control'
 
 export async function PATCH(
   request: Request,
@@ -11,6 +12,7 @@ export async function PATCH(
 ) {
   try {
     const { id, itemId } = await params
+    const { user } = await requireProjectAccess(id)
     const body = await request.json()
 
     // 1. Buscar item existente e configuração do calendário
@@ -29,6 +31,12 @@ export async function PATCH(
 
     if (!item) {
         return NextResponse.json({ success: false, error: 'Item não encontrado' }, { status: 404 })
+    }
+    if (item.projectId !== id) {
+      return NextResponse.json({ success: false, error: 'Item não pertence ao projeto informado' }, { status: 403 })
+    }
+    if (user.tenantId && item.tenantId && item.tenantId !== user.tenantId) {
+      return NextResponse.json({ success: false, error: 'Acesso negado ao tenant' }, { status: 403 })
     }
 
     // Configuração do motor
@@ -110,6 +118,9 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, data: updated })
   } catch (error) {
+    if (error instanceof AccessError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+    }
     console.error('Erro ao atualizar item:', error)
     return NextResponse.json({ success: false, error: 'Erro' }, { status: 500 })
   }

@@ -3,15 +3,18 @@
 import { prisma } from "@/lib/prisma";
 import { startOfWeek, endOfWeek, eachDayOfInterval, format, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { requireAuth } from "@/lib/access-control";
 
 export async function getResourceAllocation(weekStart: Date = new Date()) {
   try {
+    const currentUser = await requireAuth();
     const start = startOfWeek(weekStart, { weekStartsOn: 1 });
     const end = endOfWeek(weekStart, { weekStartsOn: 1 });
     const days = eachDayOfInterval({ start, end });
 
     const items = await prisma.projectItem.findMany({
       where: {
+        ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
         responsible: { not: null },
         datePlanned: {
           gte: start,

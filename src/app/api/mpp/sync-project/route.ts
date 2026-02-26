@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getMppTasks, mppFetchRaw } from '@/lib/mpp-api'
 import { normalizeTaskStatus } from '@/lib/task-status'
+import { AccessError, requireAuth, requireProjectAccess } from '@/lib/access-control'
 
 type SyncMode = 'append' | 'upsert' | 'replace'
 
@@ -38,7 +39,12 @@ async function getMppProjectName(projectId: string, tenantId?: string, projectNa
 export async function POST(request: Request) {
   let importedProjectId: string | undefined
   try {
-    const tenantId = request.headers.get('x-tenant-id') || undefined
+    const currentUser = await requireAuth()
+    const headerTenantId = request.headers.get('x-tenant-id') || undefined
+    if (currentUser.tenantId && headerTenantId && currentUser.tenantId !== headerTenantId) {
+      throw new AccessError('Tenant inválido', 403)
+    }
+    const tenantId = currentUser.tenantId || headerTenantId || undefined
     const payload = (await request.json()) as {
       mppProjectId?: string
       localProjectId?: string
@@ -53,19 +59,25 @@ export async function POST(request: Request) {
     const mppProjectId = payload.mppProjectId
     const projectName = await getMppProjectName(mppProjectId, tenantId, payload.projectNameHint)
 
-    const localProject = payload.localProjectId
-      ? await prisma.project.findUnique({
-          where: { id: payload.localProjectId },
-        })
-      : await prisma.project.create({
-          data: {
-            name: projectName,
-            code: `MPP-${mppProjectId.slice(0, 8).toUpperCase()}`,
-            status: 'Andamento',
-            type: 'Importado MPP',
-            description: `Projeto sincronizado da MPP Platform. External ID: ${mppProjectId}`,
-          },
-        })
+    let localProject
+    if (payload.localProjectId) {
+      await requireProjectAccess(payload.localProjectId, currentUser)
+      localProject = await prisma.project.findUnique({
+        where: { id: payload.localProjectId },
+      })
+    } else {
+      localProject = await prisma.project.create({
+        data: {
+          name: projectName,
+          code: `MPP-${mppProjectId.slice(0, 8).toUpperCase()}`,
+          status: 'EM_ANDAMENTO',
+          type: 'Importado MPP',
+          description: `Projeto sincronizado da MPP Platform. External ID: ${mppProjectId}`,
+          createdById: currentUser.id,
+          tenantId: currentUser.tenantId || undefined,
+        },
+      })
+    }
 
     if (!localProject) {
       return NextResponse.json({ success: false, error: 'Projeto local não encontrado' }, { status: 404 })
@@ -73,6 +85,7 @@ export async function POST(request: Request) {
 
     const existingImported = await prisma.importedProject.findFirst({
       where: {
+        ...(currentUser.tenantId ? { tenantId: currentUser.tenantId } : {}),
         source: 'MPP',
         externalUid: mppProjectId,
       },
@@ -90,7 +103,8 @@ export async function POST(request: Request) {
           projectId: localProject.id,
           externalProjectId: mppProjectId,
           syncMode: effectiveSyncMode,
-          syncStatus: 'syncing',
+          syncStatus: 'SYNCING',
+          tenantId: currentUser.tenantId || undefined,
         },
       })
     } else {
@@ -102,11 +116,15 @@ export async function POST(request: Request) {
           projectId: localProject.id,
           externalProjectId: mppProjectId,
           syncMode: effectiveSyncMode,
-          syncStatus: 'syncing',
+          syncStatus: 'SYNCING',
+          tenantId: currentUser.tenantId || undefined,
+          importedById: currentUser.id,
         },
       })
       importedProjectId = createdImported.id
     }
+
+    const syncTenantId = currentUser.tenantId ?? localProject.tenantId
 
     const mppTasks = await getMppTasks(mppProjectId, undefined, { tenantId, timeoutMs: 120_000 })
     const importedExternalIds = mppTasks.map((task) => `mpp:${mppProjectId}:${String(task.id)}`)
@@ -118,6 +136,7 @@ export async function POST(request: Request) {
       const externalId = `mpp:${mppProjectId}:${String(task.id)}`
       const taskData = {
         projectId: localProject.id,
+        tenantId: syncTenantId,
         originSheet: 'CRONOGRAMA_IMPORT',
         task: task.task,
         wbs: task.wbs || undefined,
@@ -131,7 +150,8 @@ export async function POST(request: Request) {
       if (effectiveSyncMode === 'append') {
         const existingTask = await prisma.projectItem.findUnique({
           where: {
-            projectId_externalId: {
+            tenantId_projectId_externalId: {
+              tenantId: syncTenantId,
               projectId: localProject.id,
               externalId,
             },
@@ -143,7 +163,7 @@ export async function POST(request: Request) {
           await prisma.projectItem.create({
             data: {
               externalId,
-              priority: 'Média',
+              priority: 'MEDIA',
               ...taskData,
             },
           })
@@ -156,7 +176,8 @@ export async function POST(request: Request) {
 
       const existingTask = await prisma.projectItem.findUnique({
         where: {
-          projectId_externalId: {
+          tenantId_projectId_externalId: {
+            tenantId: syncTenantId,
             projectId: localProject.id,
             externalId,
           },
@@ -166,7 +187,8 @@ export async function POST(request: Request) {
 
       await prisma.projectItem.upsert({
         where: {
-          projectId_externalId: {
+          tenantId_projectId_externalId: {
+            tenantId: syncTenantId,
             projectId: localProject.id,
             externalId,
           },
@@ -174,7 +196,7 @@ export async function POST(request: Request) {
         update: taskData,
         create: {
           externalId,
-          priority: 'Média',
+          priority: 'MEDIA',
           ...taskData,
         },
       })
@@ -210,7 +232,7 @@ export async function POST(request: Request) {
       await prisma.importedProject.update({
         where: { id: importedProjectId },
         data: {
-          syncStatus: 'synced',
+          syncStatus: 'SYNCED',
           lastSyncAt: new Date(),
           syncMode: effectiveSyncMode,
           name: projectName,
@@ -232,13 +254,16 @@ export async function POST(request: Request) {
       removedTasks: cleanupResult.count,
     })
   } catch (error) {
+    if (error instanceof AccessError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status })
+    }
     console.error('Erro ao sincronizar projeto importado:', error)
     if (importedProjectId) {
       await prisma.importedProject
         .update({
           where: { id: importedProjectId },
           data: {
-            syncStatus: 'error',
+            syncStatus: 'ERROR',
             lastSyncAt: new Date(),
           },
         })

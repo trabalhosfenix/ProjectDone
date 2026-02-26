@@ -3,10 +3,12 @@
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import * as XLSX from 'xlsx'
+import { requireProjectAccess } from '@/lib/access-control'
 
 // Get all Cutover tasks for a project
 export async function getCutoverTasks(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
     const tasks = await prisma.cutoverTask.findMany({
       where: { projectId },
       orderBy: { order: 'asc' }
@@ -21,6 +23,7 @@ export async function getCutoverTasks(projectId: string) {
 // Get dashboard stats
 export async function getCutoverStats(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
     const tasks = await prisma.cutoverTask.findMany({
       where: { projectId }
     })
@@ -58,6 +61,7 @@ export async function getCutoverStats(projectId: string) {
 // Create a new Cutover task
 export async function createCutoverTask(projectId: string, data: any) {
   try {
+    await requireProjectAccess(projectId)
     const lastTask = await prisma.cutoverTask.findFirst({
       where: { projectId },
       orderBy: { order: 'desc' }
@@ -96,6 +100,11 @@ export async function createCutoverTask(projectId: string, data: any) {
 // Update a Cutover task
 export async function updateCutoverTask(id: string, projectId: string, data: any) {
   try {
+    await requireProjectAccess(projectId)
+    const existing = await prisma.cutoverTask.findUnique({ where: { id }, select: { projectId: true } })
+    if (!existing || existing.projectId !== projectId) {
+      return { success: false, error: 'Acesso negado à tarefa' }
+    }
     await prisma.cutoverTask.update({
       where: { id },
       data: {
@@ -128,6 +137,11 @@ export async function updateCutoverTask(id: string, projectId: string, data: any
 // Delete a Cutover task
 export async function deleteCutoverTask(id: string, projectId: string) {
   try {
+    await requireProjectAccess(projectId)
+    const existing = await prisma.cutoverTask.findUnique({ where: { id }, select: { projectId: true } })
+    if (!existing || existing.projectId !== projectId) {
+      return { success: false, error: 'Acesso negado à tarefa' }
+    }
     await prisma.cutoverTask.delete({ where: { id } })
     revalidatePath(`/dashboard/projetos/${projectId}/cutover`)
     return { success: true }
@@ -140,6 +154,7 @@ export async function deleteCutoverTask(id: string, projectId: string) {
 // Import Cutover tasks from Excel
 export async function importCutoverFromExcel(projectId: string, formData: FormData) {
   try {
+    await requireProjectAccess(projectId)
     const file = formData.get('file') as File
     if (!file) return { success: false, error: 'Arquivo não fornecido' }
 

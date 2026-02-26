@@ -3,9 +3,11 @@
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
+import { requireAuth } from '@/lib/access-control'
 
 export async function uploadFile(formData: FormData) {
   try {
+    await requireAuth()
     const file = formData.get('file') as File
     if (!file) {
       return { success: false, error: 'Nenhum arquivo enviado' }

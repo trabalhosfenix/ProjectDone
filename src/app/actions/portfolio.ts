@@ -1,9 +1,11 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/access-control";
 
 export async function getDocuments() {
   try {
+    await requireAuth()
     return await (prisma as any).document.findMany({
       orderBy: { uploadedAt: "desc" },
       include: {
@@ -20,6 +22,7 @@ export async function getDocuments() {
 
 export async function getProjectPrioritization() {
   try {
+    await requireAuth()
     const projects = await (prisma as any).projectCanvas.findMany({
       select: {
         projectName: true,
@@ -40,6 +43,7 @@ export async function getProjectPrioritization() {
 }
 export async function uploadDocument(data: { name: string, type: string, url: string, projectName?: string }) {
   try {
+    await requireAuth()
     const doc = await (prisma as any).document.create({
       data: {
         ...data,

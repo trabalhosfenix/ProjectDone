@@ -9,6 +9,18 @@ services:
       - "3000:3000" # Mantido para debug, mas Nginx/Caddy usará porta 80/443
     environment:
       - DATABASE_URL=postgresql://admin:projectdone2025@db:5432/projectdone?schema=public
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-projectdone2025}
+      - POSTGRES_DB=${POSTGRES_DB:-projectdone}
+      - ALLOW_BOOTSTRAP_ADMIN=${ALLOW_BOOTSTRAP_ADMIN:-true}
+      - BOOTSTRAP_TENANT_NAME=${BOOTSTRAP_TENANT_NAME:-Conta Principal}
+      - BOOTSTRAP_TENANT_SLUG=${BOOTSTRAP_TENANT_SLUG:-conta-principal}
+      - BOOTSTRAP_ADMIN_NAME=${BOOTSTRAP_ADMIN_NAME:-Administrador}
+      - BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL:-admin@empresa.com}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-admin123}
+      - ALLOW_BOOTSTRAP_ADMIN_RESET_PASSWORD=${ALLOW_BOOTSTRAP_ADMIN_RESET_PASSWORD:-false}
       - NEXTAUTH_SECRET=ponto_de_criacao_secret_2025
       - NEXTAUTH_URL=https://projectdone.com.br
       - MPP_API_BASE_URL=${MPP_API_BASE_URL:-http://mpp-api:8000}
