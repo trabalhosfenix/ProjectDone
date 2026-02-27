@@ -15,6 +15,11 @@ type RawTask = {
   responsible: string | null
 }
 
+type RawDependency = {
+  predecessorItemId: string
+  successorItemId: string
+}
+
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
 
 const toIsoDate = (value?: Date | null) => {
@@ -67,6 +72,24 @@ export async function GET(
       },
     })
 
+    const links = await prisma.projectItemDependency.findMany({
+      where: {
+        projectId: id,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+      },
+      select: {
+        predecessorItemId: true,
+        successorItemId: true,
+      },
+    })
+
+    const predecessorsBySuccessor = links.reduce<Map<string, string[]>>((acc, link: RawDependency) => {
+      const current = acc.get(link.successorItemId) || []
+      current.push(link.predecessorItemId)
+      acc.set(link.successorItemId, current)
+      return acc
+    }, new Map())
+
     const normalized = sourceTasks.map((item) => ({
       id: item.id,
       name: item.task || 'Sem nome',
@@ -74,9 +97,12 @@ export async function GET(
       start: toIsoDate(item.datePlanned || item.dateActualStart),
       end: toIsoDate(item.datePlannedEnd || item.dateActual),
       progress: getProgress(item),
+      finish: toIsoDate(item.datePlannedEnd || item.dateActual),
+      percent_complete: getProgress(item),
+      is_summary: Boolean(item.wbs && item.wbs.split('.').length <= 1),
       responsible: item.responsible || undefined,
       statusLabel: item.status || undefined,
-      dependencies: '',
+      dependencies: predecessorsBySuccessor.get(item.id) || [],
     }))
 
     const datedTasks = normalized.filter((item) => item.start && item.end)
@@ -102,9 +128,12 @@ export async function GET(
           name: item.name,
           start,
           end,
+          finish: end,
           progress: item.progress,
+          percent_complete: item.progress,
           dependencies: item.dependencies,
           wbs: item.wbs,
+          is_summary: item.is_summary,
           responsible: item.responsible,
           statusLabel: item.statusLabel,
         }
@@ -113,6 +142,8 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
+      project_id: id,
+      tasks,
       data: tasks,
       summary: {
         total: tasks.length,
