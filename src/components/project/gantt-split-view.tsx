@@ -9,7 +9,7 @@ export interface GanttSplitTask {
   start: string
   end: string
   progress: number
-  dependencies?: string
+  dependencies?: string | string[]
   wbs?: string
   responsible?: string
   statusLabel?: string
