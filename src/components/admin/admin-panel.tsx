@@ -4,12 +4,13 @@
 
 // src/components/admin/admin-panel.tsx
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Users, LayoutDashboard, Database, Settings, Trello, Activity, Layout, FolderOpen, LayoutGrid, ZoomIn, ZoomOut, Type, Shield, UserCircle2 } from "lucide-react";
 import { ExcelUpload } from "@/components/excel-upload";
 import { ProjectDataTable } from "@/components/project-data-table";
 
 import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 
 import { KPISection } from "@/components/dashboard/kpi-section";
 
@@ -61,6 +62,7 @@ interface AdminPanelProps {
 
 export default function AdminPanel({ initialItems, stats, curvaSData, recentActivities, statusOptions }: AdminPanelProps) {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<"dashboard" | "kanban" | "data" | "settings" | "canvas" | "resources" | "library" | "portfolio" | "perfis" | "projetos">("projetos");
   const [selectedProject, setSelectedProject] = useState("Geral");
 
@@ -103,6 +105,15 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
     project: [],
     common: [{ id: "minha-conta", label: "Minha Conta", icon: UserCircle2, href: "/dashboard/minha-conta" }]
   };
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const allowedTabs = new Set(["dashboard", "kanban", "data", "settings", "canvas", "resources", "library", "portfolio", "perfis", "projetos"]);
+
+    if (tab && allowedTabs.has(tab)) {
+      setActiveTab(tab as typeof activeTab);
+    }
+  }, [searchParams]);
 
 
 
@@ -441,4 +452,3 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
   );
 
 }
-
