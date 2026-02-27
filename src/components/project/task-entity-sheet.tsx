@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { createProjectItem, deleteProjectItem, updateProjectItem } from '@/app/actions/project-items'
+import { fromProjectItemPriorityLevel } from '@/lib/project-item-priority'
 import { toast } from 'sonner'
 
 interface TaskEntitySheetProps {
@@ -48,7 +49,7 @@ export function TaskEntitySheet({ open, onOpenChange, projectId, task, responsib
     scenario: task?.scenario || '',
     responsible: task?.responsible || '',
     status: task?.status || task?.statusLabel || 'A iniciar',
-    priority: task?.priority || 'Média',
+    priority: fromProjectItemPriorityLevel(task?.priority),
     datePlanned: toDateInput(task?.datePlanned || task?.start),
     datePlannedEnd: toDateInput(task?.datePlannedEnd || task?.end),
     progress: String(Math.round(((task?.metadata?.progress ?? task?.progress ?? 0) <= 1 ? (task?.metadata?.progress ?? task?.progress ?? 0) * 100 : (task?.metadata?.progress ?? task?.progress ?? 0)) || 0)),

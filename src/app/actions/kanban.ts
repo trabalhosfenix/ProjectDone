@@ -8,6 +8,7 @@ import { syncProjectProgress } from '@/lib/project-progress'
 import { syncStatusAndProgress } from '@/lib/project-item-flow'
 import { requireProjectAccess } from '@/lib/access-control'
 import { getProjectInvolvedOptions, isResponsibleAllowed } from '@/lib/project-involved'
+import { fromProjectItemPriorityLevel, toProjectItemPriorityLevel } from '@/lib/project-item-priority'
 
 type CreateKanbanItemInput = {
   projectId: string
@@ -64,6 +65,7 @@ export async function getKanbanItems(projectId: string) {
       data: items.map((item) => ({
         ...item,
         status: normalizeTaskStatus(item.status),
+        priority: fromProjectItemPriorityLevel(item.priority),
       })),
     }
   } catch (error) {
@@ -116,7 +118,7 @@ export async function createKanbanItem(input: CreateKanbanItemInput) {
         scenario: input.scenario || null,
         originSheet: 'KANBAN',
         status: normalizedStatus,
-        priority: input.priority || 'Média',
+        priority: toProjectItemPriorityLevel(input.priority),
         responsible: input.responsible || null,
         datePlanned: plannedStart,
         datePlannedEnd: plannedEnd,
