@@ -46,7 +46,8 @@ export default function GanttPage() {
         throw new Error(`HTTP ${res.status} - ${body}`)
       }
       const data = await res.json()
-      setTasks(Array.isArray(data?.data) ? (data.data as GanttSplitTask[]) : [])
+      const payload = Array.isArray(data?.tasks) ? data.tasks : Array.isArray(data?.data) ? data.data : []
+      setTasks(payload as GanttSplitTask[])
     } catch (e) {
       console.error('Erro ao carregar tarefas:', e)
       toast.error('Erro ao carregar cronograma')

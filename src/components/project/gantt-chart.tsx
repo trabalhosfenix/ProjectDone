@@ -9,7 +9,7 @@ interface GanttTask {
   start: string
   end: string
   progress: number
-  dependencies?: string
+  dependencies?: string | string[]
   wbs?: string
   responsible?: string
   statusLabel?: string
@@ -51,6 +51,7 @@ export function GanttChart({
 
   const normalizeDependencies = (value: GanttTask['dependencies']) => {
     if (!value) return ''
+    if (Array.isArray(value)) return value.filter(Boolean).join(',')
     return typeof value === 'string' ? value : ''
   }
 
