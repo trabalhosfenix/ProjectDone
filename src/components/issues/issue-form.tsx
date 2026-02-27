@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,7 +53,10 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
       })
   }
 
-  // ... handleChange
+  const handleChange = (field: keyof typeof formData, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }))
+  }
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -86,7 +89,8 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
           toast.success('Questão criada com sucesso!')
           // If in Sheet (modal), we might want to close or refresh parent.
           // Router push refreshes full page.
-          window.location.reload() // Force reload to update Kanban items
+          router.push(`/dashboard/projetos/${projectId}/questoes`)
+          router.refresh()
         } else {
           toast.error(result.error || 'Erro ao criar questão')
         }
@@ -112,14 +116,18 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
 
         if (result.success) {
           toast.success('Questão atualizada com sucesso!')
-           window.location.reload() 
+          router.push(`/dashboard/projetos/${projectId}/questoes/${issue.id}`)
+          router.refresh()
         } else {
           toast.error(result.error || 'Erro ao atualizar questão')
         }
       }
     } catch (error) {
-    // ...
-    } finally { setIsSubmitting(false) }
+      console.error('Erro ao salvar questão:', error)
+      toast.error(mode === 'create' ? 'Erro ao criar questão' : 'Erro ao atualizar questão')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
