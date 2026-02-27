@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { requireProjectAccess } from '@/lib/access-control'
+import { hasPermission, PERMISSIONS } from '@/lib/permissions'
 
 // ... (funções anteriores getProjectMembers, addProjectMember, removeProjectMember)
 
@@ -67,6 +68,12 @@ export async function getAvailableProjectUsers(projectId: string) {
 export async function addProjectMember(projectId: string, email: string, role: string) {
   try {
     const { project, user: currentUser } = await requireProjectAccess(projectId)
+
+    const canManagePeople = currentUser.role === 'ADMIN' || await hasPermission(currentUser.id, PERMISSIONS.MANAGE_PEOPLE)
+    if (!canManagePeople) {
+      return { success: false, error: 'Sem permissão para gerenciar envolvidos do projeto' }
+    }
+
     const normalizedEmail = email.trim().toLowerCase()
     const expectedTenantId = project.tenantId || currentUser.tenantId || null
 
@@ -136,6 +143,12 @@ export async function addProjectMember(projectId: string, email: string, role: s
 export async function removeProjectMember(memberId: string, projectId: string) {
   try {
     const { user } = await requireProjectAccess(projectId)
+
+    const canManagePeople = user.role === 'ADMIN' || await hasPermission(user.id, PERMISSIONS.MANAGE_PEOPLE)
+    if (!canManagePeople) {
+      return { success: false, error: 'Sem permissão para gerenciar envolvidos do projeto' }
+    }
+
     const existing = await prisma.projectMember.findUnique({
       where: { id: memberId },
       select: { projectId: true, tenantId: true },
@@ -158,6 +171,12 @@ export async function removeProjectMember(memberId: string, projectId: string) {
 export async function updateMemberAllocation(memberId: string, projectId: string, data: { effort?: number, cost?: number, revenue?: number }) {
   try {
     const { user } = await requireProjectAccess(projectId)
+
+    const canManagePeople = user.role === 'ADMIN' || await hasPermission(user.id, PERMISSIONS.MANAGE_PEOPLE)
+    if (!canManagePeople) {
+      return { success: false, error: 'Sem permissão para atualizar alocação de envolvidos' }
+    }
+
     const existing = await prisma.projectMember.findUnique({
       where: { id: memberId },
       select: { projectId: true, tenantId: true },

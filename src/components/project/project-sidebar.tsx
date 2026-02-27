@@ -129,8 +129,7 @@ export function ProjectSidebar({ projectId }: ProjectSidebarProps) {
       label: 'Riscos',
       icon: <AlertTriangle className="w-4 h-4" />,
       items: [
-        { id: 'riscos-listar', label: 'Matriz de Riscos', href: `/dashboard/projetos/${projectId}/riscos` },
-        { id: 'riscos-novo', label: 'Novo Risco', href: `/dashboard/projetos/${projectId}/riscos/novo` }
+        { id: 'riscos-painel', label: 'Painel de Riscos', href: `/dashboard/projetos/${projectId}/riscos` }
       ]
     },
     {
@@ -138,8 +137,7 @@ export function ProjectSidebar({ projectId }: ProjectSidebarProps) {
       label: 'Questões (Issues)',
       icon: <MessageSquare className="w-4 h-4" />,
       items: [
-        { id: 'questoes-listar', label: 'Lista de Questões', href: `/dashboard/projetos/${projectId}/questoes` },
-        { id: 'questoes-nova', label: 'Nova Questão', href: `/dashboard/projetos/${projectId}/questoes/nova` },
+        { id: 'questoes-painel', label: 'Painel de Questões', href: `/dashboard/projetos/${projectId}/questoes` },
       ]
     },
     {

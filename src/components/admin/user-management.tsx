@@ -23,7 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserPlus, Mail, Trash2, Building2 } from "lucide-react";
 import { getUsers, createUser, deleteUser } from "@/app/actions/users";
-import { getRoles } from "@/app/actions/permissions";
+import { getRoles, assignRoleToUser } from "@/app/actions/permissions";
 import { getTenants } from "@/app/actions/tenants";
 import { toast } from "sonner";
 
@@ -38,6 +38,8 @@ export default function UserManagement() {
   const [availableRoles, setAvailableRoles] = useState<any[]>([]);
   const [availableTenants, setAvailableTenants] = useState<any[]>([]);
   const [isPending, setIsPending] = useState(false);
+  const [roleBindings, setRoleBindings] = useState<Record<string, string>>({});
+  const [isBindingRole, setIsBindingRole] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -50,6 +52,25 @@ export default function UserManagement() {
     setAvailableRoles(rolesData);
     const tenantsData = await getTenants();
     setAvailableTenants(tenantsData);
+
+    const initialBindings: Record<string, string> = {};
+    data.forEach((user) => {
+      initialBindings[user.id] = user.userRole?.id || "none";
+    });
+    setRoleBindings(initialBindings);
+  }
+
+  async function handleAssignRole(userId: string) {
+    const selectedRoleId = roleBindings[userId] && roleBindings[userId] !== "none" ? roleBindings[userId] : null;
+    setIsBindingRole(userId);
+    const result = await assignRoleToUser(userId, selectedRoleId);
+    if (result.success) {
+      toast.success("Perfil atualizado com sucesso.");
+      await fetchUsers();
+    } else {
+      toast.error(result.error || "Falha ao atualizar perfil.");
+    }
+    setIsBindingRole(null);
   }
 
   async function handleCreateUser() {
@@ -169,6 +190,7 @@ export default function UserManagement() {
                 <TableHead>E-mail</TableHead>
                 <TableHead>Nível</TableHead>
                 <TableHead>Conta</TableHead>
+                <TableHead>Perfil</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -197,6 +219,34 @@ export default function UserManagement() {
                     <div className="flex items-center gap-2 text-gray-500">
                       <Building2 className="w-3 h-3" />
                       <span>{user.tenant?.name || "Sem conta"}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-left min-w-[260px]">
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={roleBindings[user.id] || "none"}
+                        onValueChange={(value) =>
+                          setRoleBindings((prev) => ({ ...prev, [user.id]: value }))
+                        }
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Perfil" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Sem perfil</SelectItem>
+                          {availableRoles.map((r) => (
+                            <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isBindingRole === user.id}
+                        onClick={() => handleAssignRole(user.id)}
+                      >
+                        {isBindingRole === user.id ? "Salvando..." : "Salvar"}
+                      </Button>
                     </div>
                   </TableCell>
                   <TableCell className="text-right space-x-2">

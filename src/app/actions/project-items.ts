@@ -5,6 +5,8 @@ import { revalidatePath } from 'next/cache'
 import { syncProjectProgress } from '@/lib/project-progress'
 import { syncStatusAndProgress } from '@/lib/project-item-flow'
 import { requireProjectAccess } from '@/lib/access-control'
+import { toProjectItemPriorityLevel } from '@/lib/project-item-priority'
+import { getProjectInvolvedOptions, isResponsibleAllowed } from '@/lib/project-involved'
 
 /**
  * Buscar todas as tarefas do projeto (sem hierarquia por enquanto)
@@ -72,7 +74,10 @@ export async function createProjectItem(data: {
   plannedValue?: number
   actualCost?: number
   datePlanned?: Date
+  datePlannedEnd?: Date
   dateActual?: Date
+  wbs?: string
+  metadata?: any
 }) {
   try {
     const { user } = await requireProjectAccess(data.projectId)
@@ -89,12 +94,15 @@ export async function createProjectItem(data: {
         scenario: data.scenario,
         responsible: data.responsible,
         status: data.status || 'A iniciar',
-        priority: data.priority || 'Média',
+        priority: toProjectItemPriorityLevel(data.priority),
         perspective: data.perspective || 'Geral',
         plannedValue: data.plannedValue || 0,
         actualCost: data.actualCost || 0,
         datePlanned: data.datePlanned,
+        datePlannedEnd: data.datePlannedEnd,
         dateActual: data.dateActual,
+        wbs: data.wbs,
+        metadata: data.metadata,
         originSheet: 'MANUAL'
       }
     })
@@ -151,6 +159,13 @@ export async function updateProjectItem(
       return { success: false, error: 'Acesso negado à tarefa' }
     }
 
+    if (data.responsible !== undefined) {
+      const responsibleOptions = await getProjectInvolvedOptions(currentItem.projectId, user.tenantId)
+      if (!isResponsibleAllowed(data.responsible, responsibleOptions)) {
+        return { success: false, error: 'Responsável deve ser um envolvido do projeto' }
+      }
+    }
+
     const shouldSyncFlow = data.status !== undefined || data.metadata !== undefined
     const flow = shouldSyncFlow
       ? syncStatusAndProgress({
@@ -163,6 +178,10 @@ export async function updateProjectItem(
 
     const dataToUpdate: Record<string, unknown> = {
       ...data,
+    }
+
+    if (data.priority !== undefined) {
+      dataToUpdate.priority = toProjectItemPriorityLevel(data.priority)
     }
 
     if (flow) {

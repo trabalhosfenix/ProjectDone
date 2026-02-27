@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { toProjectItemPriorityLevel } from '@/lib/project-item-priority'
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -214,7 +215,7 @@ export async function createProjectItem(data: { task: string, status: string, or
         ...data,
         tenantId: project?.tenantId || undefined,
         wbs: data.wbs?.trim() || null,
-        priority: "Média"
+        priority: toProjectItemPriorityLevel("Média")
       }
     });
 

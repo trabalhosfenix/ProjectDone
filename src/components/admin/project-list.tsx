@@ -10,6 +10,7 @@ import {
   type ProjectFilters,
 } from "@/app/actions/projects";
 import { getProjectTypes } from "@/app/actions/project-types";
+import { getCalendars } from "@/app/actions/calendars";
 import { 
   FolderKanban, 
   Plus, 
@@ -76,6 +77,7 @@ export function ProjectList() {
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [typeOptions, setTypeOptions] = useState<string[]>(DEFAULT_TYPES);
+  const [calendarOptions, setCalendarOptions] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"all" | "local" | "imported">("all");
   const [syncingId, setSyncingId] = useState<string | null>(null);
   
@@ -100,6 +102,7 @@ export function ProjectList() {
     client: "",
     budget: 0,
     priority: "Média",
+    workCalendarId: "",
   });
 
   useEffect(() => {
@@ -112,7 +115,8 @@ export function ProjectList() {
       await Promise.all([
         loadProjects(),
         loadFilterOptions(),
-        loadTypes()
+        loadTypes(),
+        loadCalendars(),
       ]);
     } catch (error) {
       toast({
@@ -130,6 +134,13 @@ export function ProjectList() {
     if (res.success && res.types && res.types.length > 0) {
       const activeNames = res.types.filter((t: any) => t.active).map((t: any) => t.name);
       if (activeNames.length > 0) setTypeOptions(activeNames);
+    }
+  };
+
+  const loadCalendars = async () => {
+    const res = await getCalendars();
+    if (res.success && res.data) {
+      setCalendarOptions(res.data);
     }
   };
 
@@ -266,6 +277,7 @@ export function ProjectList() {
       client: "",
       budget: 0,
       priority: "Média",
+      workCalendarId: "",
     });
     setView("new");
   };
@@ -288,6 +300,7 @@ export function ProjectList() {
       client: project.client || "",
       budget: project.budget || 0,
       priority: project.priority || "Média",
+      workCalendarId: project.workCalendarId || "",
     });
     setView("edit");
   };
@@ -313,6 +326,7 @@ export function ProjectList() {
       ...formData,
       startDate: formData.startDate ? new Date(formData.startDate) : undefined,
       endDate: formData.endDate ? new Date(formData.endDate) : undefined,
+      workCalendarId: formData.workCalendarId || undefined,
     };
 
     let result;
@@ -510,6 +524,23 @@ export function ProjectList() {
                 onChange={(e) => setFormData((prev) => ({ ...prev, endDate: e.target.value }))}
                 className="w-full border rounded px-3 py-2"
               />
+            </div>
+
+            {/* Calendário */}
+            <div>
+              <label className="block mb-2 font-semibold">Calendário de Trabalho</label>
+              <select
+                value={formData.workCalendarId}
+                onChange={(e) => setFormData((prev) => ({ ...prev, workCalendarId: e.target.value }))}
+                className="w-full border rounded px-3 py-2"
+              >
+                <option value="">Padrão do sistema (Dias Úteis)</option>
+                {calendarOptions.map((calendar) => (
+                  <option key={calendar.id} value={calendar.id}>
+                    {calendar.name} ({calendar.type === 'BUSINESS_DAYS' ? 'Dias Úteis' : 'Dias Corridos'})
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Área */}
