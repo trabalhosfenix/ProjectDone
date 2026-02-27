@@ -571,6 +571,8 @@ export async function getProjectSituationStats(projectId: string) {
             ...project,
             realDuration,
             teamCount: uniqueResponsibles.size,
+            risksCount,
+            issuesCount,
             risksIssuesCount: totalRisksIssues,
             calculatedProgress: Math.round(calculatedProgress),
             completedTasks,
