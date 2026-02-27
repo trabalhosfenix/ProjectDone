@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { syncProjectProgress } from '@/lib/project-progress'
 import { syncStatusAndProgress } from '@/lib/project-item-flow'
 import { requireProjectAccess } from '@/lib/access-control'
+import { toProjectItemPriorityLevel } from '@/lib/project-item-priority'
 import { getProjectInvolvedOptions, isResponsibleAllowed } from '@/lib/project-involved'
 
 /**
@@ -93,7 +94,7 @@ export async function createProjectItem(data: {
         scenario: data.scenario,
         responsible: data.responsible,
         status: data.status || 'A iniciar',
-        priority: data.priority || 'Média',
+        priority: toProjectItemPriorityLevel(data.priority),
         perspective: data.perspective || 'Geral',
         plannedValue: data.plannedValue || 0,
         actualCost: data.actualCost || 0,
@@ -177,6 +178,10 @@ export async function updateProjectItem(
 
     const dataToUpdate: Record<string, unknown> = {
       ...data,
+    }
+
+    if (data.priority !== undefined) {
+      dataToUpdate.priority = toProjectItemPriorityLevel(data.priority)
     }
 
     if (flow) {
