@@ -37,11 +37,8 @@ export function ProjectHorizontalMenu({ projectId }: ProjectHorizontalMenuProps)
         { label: 'Alocação', href: `/dashboard/projetos/${projectId}/alocacao`, implemented: true },
         { label: 'EAP / Dicionário', href: `/dashboard/projetos/${projectId}/escopo/dicionario`, implemented: true },
         { label: 'Metas', href: `/dashboard/projetos/${projectId}/metas`, implemented: true },
-        { label: 'Riscos - Listar', href: `/dashboard/projetos/${projectId}/riscos`, implemented: true },
-        { label: 'Riscos - Novo', href: `/dashboard/projetos/${projectId}/riscos/novo`, implemented: true },
-        { label: 'Riscos - Importar', href: `/dashboard/projetos/${projectId}/riscos/importar`, implemented: true },
-        { label: 'Questões - Listar', href: `/dashboard/projetos/${projectId}/questoes`, implemented: true },
-        { label: 'Questões - Nova', href: `/dashboard/projetos/${projectId}/questoes/nova`, implemented: true },
+        { label: 'Painel de Riscos', href: `/dashboard/projetos/${projectId}/riscos`, implemented: true },
+        { label: 'Painel de Questões', href: `/dashboard/projetos/${projectId}/questoes`, implemented: true },
         { label: 'Kanban do Projeto', href: `/dashboard/projetos/${projectId}/kanban`, implemented: true },
         { label: 'Calendário Editar', href: `/dashboard/projetos/${projectId}/calendario`, implemented: true },
       ]

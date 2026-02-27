@@ -5,7 +5,7 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Search, ChevronRight, ChevronDown } from 'lucide-react'
+import { Search, ChevronRight, ChevronDown, Plus } from 'lucide-react'
 import { 
   Table, 
   TableBody, 
@@ -15,6 +15,7 @@ import {
   TableRow 
 } from '@/components/ui/table'
 import { updateProjectItem } from '@/app/actions/project-items'
+import { TaskEntitySheet } from '@/components/project/task-entity-sheet'
 import { recalculateProjectSchedule } from '@/app/actions/scheduling'
 import { toast } from 'sonner'
 import {
@@ -35,6 +36,8 @@ export function ProjectTable({ items, members = [] }: ProjectTableProps) {
   const [editingCell, setEditingCell] = useState<{ id: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState<any>('')
   const [isRecalculating, setIsRecalculating] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<any | null>(null)
+  const [isTaskSheetOpen, setIsTaskSheetOpen] = useState(false)
   
   // State for collapsed WBS parent nodes
   const [collapsedWbs, setCollapsedWbs] = useState<Set<string>>(new Set())
@@ -138,7 +141,9 @@ export function ProjectTable({ items, members = [] }: ProjectTableProps) {
       if (!editValue?.trim()) return
       payload = { task: editValue }
     } else if (field === 'duration') {
-       payload = { metadata: { duration: editValue } }
+       const durationNum = parseFloat(editValue)
+       if (isNaN(durationNum) || durationNum < 0) return
+       payload = { duration: durationNum }
     } else if (['datePlanned', 'datePlannedEnd', 'dateActualStart', 'dateActual'].includes(field)) {
        const dateVal = editValue ? new Date(editValue) : null
        payload = { [field]: dateVal }
@@ -199,6 +204,9 @@ export function ProjectTable({ items, members = [] }: ProjectTableProps) {
      return num <= 1 && num > 0 ? num * 100 : num === 0 ? 0 : num
   }
 
+
+  const responsibleOptions = useMemo(() => members.map((m) => m?.user?.name || m?.user?.email).filter(Boolean), [members])
+
   const renderDateCell = (item: any, field: string, label: string) => {
     const isEditing = editingCell?.id === item.id && editingCell?.field === field
     const value = item[field]
@@ -243,6 +251,9 @@ export function ProjectTable({ items, members = [] }: ProjectTableProps) {
             </div>
             <Button variant="outline" size="sm" onClick={handleRecalculate} disabled={isRecalculating}>
                 {isRecalculating ? 'Calculando...' : 'Recalcular Cronograma'}
+            </Button>
+            <Button size="sm" onClick={() => { setSelectedTask(null); setIsTaskSheetOpen(true) }}>
+              <Plus className="w-4 h-4 mr-1" /> Nova tarefa
             </Button>
         </div>
         <div className="text-xs text-gray-500">
@@ -322,7 +333,7 @@ export function ProjectTable({ items, members = [] }: ProjectTableProps) {
                            {!isParent && !hasFilter && <div className="w-4 mr-1" />}
                            
                            <span 
-                             onClick={() => startEdit(item.id, 'task', item.task)}
+                             onClick={() => { setSelectedTask(item); setIsTaskSheetOpen(true) }}
                              className={`truncate cursor-pointer ${rowFont} hover:text-blue-600 transition-colors`} 
                              title={item.task}
                            >
@@ -464,6 +475,13 @@ export function ProjectTable({ items, members = [] }: ProjectTableProps) {
           </TableBody>
         </Table>
       </div>
+      <TaskEntitySheet
+        open={isTaskSheetOpen}
+        onOpenChange={setIsTaskSheetOpen}
+        projectId={items[0]?.projectId || ''}
+        task={selectedTask}
+        responsibleOptions={responsibleOptions}
+      />
     </div>
   )
 }

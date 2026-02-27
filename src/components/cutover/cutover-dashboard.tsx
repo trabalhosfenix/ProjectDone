@@ -31,7 +31,7 @@ export function CutoverDashboard({ stats }: CutoverDashboardProps) {
           
           {/* Donut Chart */}
           <div className="w-[180px] h-[180px] relative">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
               <PieChart>
                 <Pie
                   data={chartData}
