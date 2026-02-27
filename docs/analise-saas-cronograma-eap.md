@@ -124,6 +124,61 @@ Implementar engine de dependências usando os nomes de campos da API:
 
 ---
 
+## Exemplos de contrato (API)
+
+### Exemplo de tarefa (`TaskResponse`)
+```json
+{
+  "id": "t-123",
+  "uid": 41,
+  "name": "Homologação",
+  "outline_level": 3,
+  "wbs": "1.2.3",
+  "start": "2026-03-10",
+  "finish": "2026-03-14",
+  "duration_hours": 32,
+  "percent_complete": 55,
+  "is_milestone": false,
+  "is_critical": true,
+  "is_summary": false
+}
+```
+
+### Exemplo de dependência (`DependencyResponse`)
+```json
+{
+  "id": "d-1",
+  "predecessor_id": "t-100",
+  "successor_id": "t-123",
+  "link_type": "FS",
+  "lag_hours": 8
+}
+```
+
+### Exemplo de Gantt (`GanttResponse`)
+```json
+{
+  "project_id": "p-1",
+  "tasks": [
+    {
+      "id": "t-123",
+      "name": "Homologação",
+      "wbs": "1.2.3",
+      "start": "2026-03-10",
+      "finish": "2026-03-14",
+      "percent_complete": 55,
+      "is_critical": true,
+      "is_milestone": false,
+      "is_summary": false,
+      "outline_level": 3,
+      "dependencies": ["t-100"]
+    }
+  ]
+}
+```
+
+---
+
 ## Proposta de desenho funcional (MVP)
 
 ### Fluxo de recálculo sugerido
@@ -139,6 +194,36 @@ Implementar engine de dependências usando os nomes de campos da API:
 - Tarefa resumo (`is_summary = true`): `percent_complete` manual bloqueado (somente consolidado dos filhos).
 - Dependências válidas apenas dentro do mesmo `project_id`.
 - Detectar e bloquear ciclo em dependências (`predecessor_id → successor_id`).
+
+### Algoritmo recomendado (resumo)
+1. Montar grafo de dependências por `project_id`.
+2. Validar ciclo (DFS/Kahn); se houver, rejeitar operação.
+3. Recalcular nó alterado conforme `schedule_mode`.
+4. Recalcular sucessoras por ordem topológica:
+   - FS: `start >= finish(predecessora)+lag_hours`
+   - SS: `start >= start(predecessora)+lag_hours`
+   - FF: `finish >= finish(predecessora)+lag_hours`
+   - SF: `finish >= start(predecessora)+lag_hours`
+5. Recalcular `duration_hours` ou `finish` conforme modo.
+6. Consolidar `percent_complete` bottom-up para summaries.
+
+---
+
+## Plano de execução (3 fases)
+
+### Fase 1 — Contrato e leitura correta (rápida)
+- Garantir saída Gantt no contrato canônico: `project_id`, `tasks[]`, `dependencies[]`.
+- Garantir que o front use `tasks[]` como padrão e sem perda de múltiplas predecessoras.
+
+### Fase 2 — Regras de calendário + dependência
+- Implementar serviço único de recálculo por alteração.
+- Aplicar `link_type` e `lag_hours` nas datas `start/finish`.
+- Cobrir cenários de múltiplas predecessoras.
+
+### Fase 3 — Consolidação EAP
+- Bloquear edição manual de `percent_complete` em `is_summary = true`.
+- Consolidar `%` de summaries por média dos filhos diretos.
+- Publicar métricas de divergência (antes/depois) e auditoria de recálculo.
 
 ---
 
