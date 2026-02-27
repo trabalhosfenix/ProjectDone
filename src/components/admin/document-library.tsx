@@ -66,7 +66,7 @@ export function DocumentLibrary() {
             
             <Button 
                 onClick={handleAddDemoDoc}
-                className="bg-[#094160] hover:bg-[#0d5a85] text-white h-10 text-[xs] font-black px-4 gap-2 rounded-lg"
+                className="bg-[#094160] hover:bg-[#0d5a85] text-white h-10 font-black px-4 gap-2 rounded-lg"
             >
                 <Plus className="w-4 h-4" />
                 NOVO DOCUMENTO

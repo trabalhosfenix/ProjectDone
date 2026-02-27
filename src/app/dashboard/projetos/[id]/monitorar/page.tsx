@@ -28,11 +28,11 @@ export default async function MonitorarPage({ params }: { params: Promise<{ id: 
       <ProjectHorizontalMenu projectId={id} />
       
       <div className="flex-1 container mx-auto p-6 max-w-[1400px] space-y-8">
-        <ProjectPageHeader 
+        {/* <ProjectPageHeader 
              title="Monitoramento e Controle"
              description="Dashboard de performance (EVA) e indicadores de progresso."
              projectId={id}
-        />
+        /> */}
         
         {/* Performance Dashboard */}
         <div>
