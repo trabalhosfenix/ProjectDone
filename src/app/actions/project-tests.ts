@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { requireProjectAccess } from '@/lib/access-control'
 
 async function canChangeScenarioStatus() {
   const session = await getServerSession(authOptions)
@@ -26,6 +27,8 @@ async function canChangeScenarioStatus() {
 
 export async function createTestScenario(projectId: string, data: any) {
   try {
+    await requireProjectAccess(projectId)
+
     const scenario = await prisma.testScenario.create({
       data: {
         projectId,
@@ -53,8 +56,14 @@ export async function createTestScenario(projectId: string, data: any) {
 
 export async function updateTestScenario(id: string, projectId: string, data: any) {
   try {
-    const current = await prisma.testScenario.findUnique({ where: { id }, select: { status: true } })
-    const wantsStatusChange = current?.status !== data.status
+    await requireProjectAccess(projectId)
+
+    const existing = await prisma.testScenario.findUnique({ where: { id }, select: { projectId: true, status: true } })
+    if (!existing || existing.projectId !== projectId) {
+      return { success: false, error: 'Acesso negado ao cenário' }
+    }
+
+    const wantsStatusChange = existing.status !== data.status
 
     if (wantsStatusChange) {
       const allowed = await canChangeScenarioStatus()
@@ -89,6 +98,13 @@ export async function updateTestScenario(id: string, projectId: string, data: an
 
 export async function deleteTestScenario(id: string, projectId: string) {
   try {
+    await requireProjectAccess(projectId)
+
+    const existing = await prisma.testScenario.findUnique({ where: { id }, select: { projectId: true } })
+    if (!existing || existing.projectId !== projectId) {
+      return { success: false, error: 'Acesso negado ao cenário' }
+    }
+
     await prisma.testScenario.delete({ where: { id } })
     revalidatePath(`/dashboard/projetos/${projectId}/testes/cenarios`)
     revalidatePath(`/dashboard/projetos/${projectId}/testes/status`)
@@ -101,6 +117,8 @@ export async function deleteTestScenario(id: string, projectId: string) {
 
 export async function getTestScenarios(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
+
     const scenarios = await prisma.testScenario.findMany({
       where: { projectId },
       orderBy: { createdAt: 'asc' } // Or sequence/externalId if preferred
@@ -114,6 +132,8 @@ export async function getTestScenarios(projectId: string) {
 
 export async function getTestDashboardStats(projectId: string) {
   try {
+    await requireProjectAccess(projectId)
+
     // Busca todos os cenários para processamento
     const scenarios = await prisma.testScenario.findMany({
       where: { projectId },
@@ -257,6 +277,8 @@ import * as XLSX from 'xlsx'
 
 export async function importTestScenarios(projectId: string, formData: FormData) {
   try {
+    await requireProjectAccess(projectId)
+
     const file = formData.get('file') as File
     if (!file) return { success: false, error: 'Arquivo não fornecido' }
 

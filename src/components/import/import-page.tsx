@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { Upload, Loader2, FileCode, ArrowRight, CircleCheck, AlertTriangle } from 'lucide-react'
 
 type ImportStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'error'
+type ImportPhase = 'mpp_upload' | 'mpp_processing' | 'local_sync'
 
 function getProjectNameHintFromFile(file: File | null): string | undefined {
   if (!file?.name) return undefined
@@ -34,10 +35,17 @@ function extractProjectId(payload: Record<string, unknown>) {
 
 function normalizeStatus(value: unknown): ImportStatus {
   const status = String(value || '').toLowerCase()
-  if (['completed', 'success', 'done', 'finished'].includes(status)) return 'completed'
+  if (['completed', 'success', 'done', 'finished', 'synced'].includes(status)) return 'completed'
   if (['failed', 'error', 'canceled'].includes(status)) return 'error'
   if (['processing', 'running', 'in_progress', 'queued', 'pending'].includes(status)) return 'processing'
   return 'processing'
+}
+
+function mapProgressByPhase(phase: ImportPhase, value: number) {
+  const safe = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0
+  if (phase === 'mpp_upload') return Math.max(5, Math.min(20, safe))
+  if (phase === 'mpp_processing') return Math.max(20, Math.min(75, Math.round(20 + safe * 0.55)))
+  return Math.max(75, Math.min(100, Math.round(75 + safe * 0.25)))
 }
 
 export default function ImportProjectPage() {
@@ -46,6 +54,7 @@ export default function ImportProjectPage() {
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [status, setStatus] = useState<ImportStatus>('idle')
+  const [phase, setPhase] = useState<ImportPhase>('mpp_upload')
   const [jobId, setJobId] = useState<string | null>(null)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [localProjectId, setLocalProjectId] = useState<string | null>(null)
@@ -97,10 +106,44 @@ export default function ImportProjectPage() {
 
     setSelectedFile(file)
     setStatus('idle')
+    setPhase('mpp_upload')
     setJobId(null)
     setProjectId(null)
     setProgress(0)
     setMessage('Arquivo selecionado e pronto para envio.')
+  }
+
+  const pollSyncJob = async (syncJobId: string, mppProjectId: string) => {
+    const timeoutAt = Date.now() + 20 * 60_000
+
+    while (Date.now() < timeoutAt) {
+      const response = await fetch(`/api/projects/imports/${syncJobId}`, { cache: 'no-store' })
+      const data = await response.json()
+
+      const nextStatus = normalizeStatus(data.status)
+      const nextProgress = Number(data.progress || 0)
+
+      setStatus(nextStatus)
+      setProgress(mapProgressByPhase('local_sync', nextProgress))
+      setMessage(data.message || 'Sincronizando dados no projeto local...')
+
+      if (nextStatus === 'completed') {
+        if (data.projectId) setLocalProjectId(String(data.projectId))
+        toast.success('Importação concluída com sucesso')
+        return
+      }
+
+      if (nextStatus === 'error') {
+        toast.error(data.error || 'Falha na sincronização do projeto local')
+        return
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+    }
+
+    setStatus('error')
+    setMessage('Tempo limite da sincronização excedido.')
+    toast.error('Tempo limite da sincronização excedido')
   }
 
   const pollJob = async (id: string) => {
@@ -114,7 +157,7 @@ export default function ImportProjectPage() {
       const nextProgress = Number(data.progress || data.percent || 0)
 
       setStatus(nextStatus)
-      setProgress(Number.isFinite(nextProgress) ? Math.max(0, Math.min(100, nextProgress)) : 0)
+      setProgress(mapProgressByPhase('mpp_processing', nextProgress))
       setMessage(data.message || data.detail || data.error || '')
 
       const resolvedProjectId = extractProjectId(data as Record<string, unknown>)
@@ -125,6 +168,11 @@ export default function ImportProjectPage() {
       if (nextStatus === 'completed') {
         const targetMppProjectId = resolvedProjectId || projectId
         if (targetMppProjectId) {
+          setPhase('local_sync')
+          setStatus('processing')
+          setProgress(mapProgressByPhase('local_sync', 5))
+          setMessage('Importação MPP concluída. Iniciando sincronização no projeto local...')
+
           const syncResponse = await fetch('/api/mpp/sync-project', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -136,13 +184,14 @@ export default function ImportProjectPage() {
             }),
           })
           const syncResult = await syncResponse.json()
-          if (syncResponse.ok && syncResult.success) {
-            setLocalProjectId(String(syncResult.localProjectId))
+          if (syncResponse.ok && syncResult.success && syncResult.syncJobId) {
+            setLocalProjectId(String(syncResult.localProjectId || localProjectId || ''))
+            await pollSyncJob(String(syncResult.syncJobId), String(syncResult.mppProjectId || targetMppProjectId))
           } else {
+            setStatus('error')
             toast.error(syncResult.error || 'Falha ao sincronizar projeto importado')
           }
         }
-        toast.success('Importação concluída com sucesso')
         return
       }
 
@@ -163,7 +212,9 @@ export default function ImportProjectPage() {
     if (!selectedFile) return
 
     try {
+      setPhase('mpp_upload')
       setStatus('uploading')
+      setProgress(mapProgressByPhase('mpp_upload', 10))
       setMessage('Enviando arquivo para processamento...')
 
       const formData = new FormData()
@@ -187,7 +238,9 @@ export default function ImportProjectPage() {
       if (resolvedProjectId) {
         setProjectId(String(resolvedProjectId))
       }
+      setPhase('mpp_processing')
       setStatus('processing')
+      setProgress(mapProgressByPhase('mpp_processing', 5))
       setMessage(data.message || 'Arquivo recebido. Processando no backend...')
 
       await pollJob(String(data.job_id))
@@ -303,6 +356,11 @@ export default function ImportProjectPage() {
                 <span><strong>Status:</strong> {status}</span>
               </div>
               {(status === 'processing' || status === 'uploading') && <Progress value={progress} className="h-2" />}
+              {(status === 'processing' || status === 'uploading') && (
+                <p className="text-xs text-gray-500">
+                  Etapa: {phase === 'mpp_upload' ? 'Upload' : phase === 'mpp_processing' ? 'Importação MPP' : 'Sincronização local'}
+                </p>
+              )}
               {message && <p className="text-sm text-gray-700">{message}</p>}
               {jobId && <p className="text-xs text-gray-500">Job ID: {jobId}</p>}
               {(localProjectId || projectId) && (
