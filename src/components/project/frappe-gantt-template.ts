@@ -1,12 +1,24 @@
 export type FrappeTemplateDensity = 'compact' | 'comfortable'
 export type FrappeTemplateMode = 'default' | 'executive' | 'planning'
+export type FrappeViewMode = 'Day' | 'Week' | 'Month' | 'Year'
 
 export interface FrappeTemplateConfig {
   barHeight: number
   padding: number
-  columnWidth: Record<'Day' | 'Week' | 'Month' | 'Year', number>
+  columnWidth: Record<FrappeViewMode, number>
   shellClassName: string
 }
+
+export const FRAPPE_TEMPLATE_OPTIONS: Array<{ value: FrappeTemplateMode; label: string }> = [
+  { value: 'default', label: 'Template padrão' },
+  { value: 'executive', label: 'Template executivo' },
+  { value: 'planning', label: 'Template planejamento' },
+]
+
+export const FRAPPE_DENSITY_OPTIONS: Array<{ value: FrappeTemplateDensity; label: string }> = [
+  { value: 'compact', label: 'Compacto' },
+  { value: 'comfortable', label: 'Confortável' },
+]
 
 const baseShell = 'gantt-shell h-full'
 
