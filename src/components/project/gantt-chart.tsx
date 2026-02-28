@@ -20,6 +20,8 @@ interface GanttChartProps {
   onTaskClick?: (task: GanttTask) => void
   onDateChange?: (task: GanttTask, start: Date, end: Date) => void
   onProgressChange?: (task: GanttTask, progress: number) => void
+  onScrollTopChange?: (scrollTop: number) => void
+  syncedScrollTop?: number
   viewMode?: 'Day' | 'Week' | 'Month' | 'Year'
   theme?: 'light' | 'dark'
   barHeight?: number
@@ -31,6 +33,8 @@ export function GanttChart({
   onTaskClick,
   onDateChange,
   onProgressChange,
+  onScrollTopChange,
+  syncedScrollTop,
   viewMode = 'Week',
   theme = 'light',
   barHeight = 20,
@@ -163,6 +167,13 @@ export function GanttChart({
     }
   }, [viewMode])
 
+  useEffect(() => {
+    if (!scrollRef.current || typeof syncedScrollTop !== 'number') return
+    const currentTop = scrollRef.current.scrollTop
+    if (Math.abs(currentTop - syncedScrollTop) <= 1) return
+    scrollRef.current.scrollTop = syncedScrollTop
+  }, [syncedScrollTop])
+
   const startDragToScroll = (event: MouseEvent<HTMLDivElement>) => {
     if (!scrollRef.current) return
 
@@ -231,6 +242,7 @@ export function GanttChart({
       <div
         ref={scrollRef}
         className="gantt-container h-full overflow-auto cursor-grab"
+        onScroll={(event) => onScrollTopChange?.(event.currentTarget.scrollTop)}
         onMouseDown={startDragToScroll}
         onMouseMove={moveDragToScroll}
         onMouseUp={endDragToScroll}

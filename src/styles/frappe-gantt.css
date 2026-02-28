@@ -53,6 +53,11 @@ html[data-theme="dark"],
   border-radius: 8px;
   isolation: isolate;
 }
+.gantt-container .grid-header,
+.gantt-container .upper-header,
+.gantt-container .lower-header {
+  transform: translateY(0) !important;
+}
 .gantt-container .popup-wrapper {
   position: absolute;
   top: 0;
@@ -321,7 +326,7 @@ html[data-theme="dark"],
   fill: var(--g-text-muted);
 }
 .gantt .bar-wrapper {
-  cursor: pointer;
+  cursor: default;
 }
 .gantt .bar-wrapper .bar {
   outline: 1px solid var(--g-row-border-color);
