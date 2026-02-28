@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { X } from 'lucide-react'
 
 interface IssueFiltersProps {
@@ -67,72 +67,72 @@ export function IssueFilters({ onFilterChange, statuses, members }: IssueFilters
       {/* Tipo */}
       <div>
         <Label htmlFor="type">Tipo</Label>
-        <select
-          id="type"
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          value={filters.type}
-          onChange={(e) => handleChange('type', e.target.value)}
-        >
-          <option value="">Todos</option>
-          <option value="INTERNAL">Interna</option>
-          <option value="EXTERNAL">Externa</option>
-        </select>
+        <Select value={filters.type || '__all'} onValueChange={(value) => handleChange('type', value === '__all' ? '' : value)}>
+          <SelectTrigger id="type" className="h-10 w-full mt-1">
+            <SelectValue placeholder="Todos" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">Todos</SelectItem>
+            <SelectItem value="INTERNAL">Interna</SelectItem>
+            <SelectItem value="EXTERNAL">Externa</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Situação */}
       <div>
         <Label htmlFor="status">Situação</Label>
-        <select
-          id="status"
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          value={filters.statusId}
-          onChange={(e) => handleChange('statusId', e.target.value)}
-        >
-          <option value="">Todas</option>
-          {statuses.map((status) => (
-            <option key={status.id} value={status.id}>
-              {status.label}
-            </option>
-          ))}
-        </select>
+        <Select value={filters.statusId || '__all'} onValueChange={(value) => handleChange('statusId', value === '__all' ? '' : value)}>
+          <SelectTrigger id="status" className="h-10 w-full mt-1">
+            <SelectValue placeholder="Todas" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">Todas</SelectItem>
+            {statuses.map((status) => (
+              <SelectItem key={status.id} value={String(status.id)}>
+                {status.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Tipo de Envolvimento */}
       <div>
         <Label htmlFor="role">Tipo de Envolvimento</Label>
-        <select
-          id="role"
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          value={filters.role}
-          onChange={(e) => handleChange('role', e.target.value)}
-        >
-          <option value="">Todos</option>
-          <option value="RESPONSIBLE">Responsável</option>
-          <option value="EXECUTOR">Executor</option>
-          <option value="TEAM">Equipe</option>
-          <option value="VALIDATES">Valida</option>
-          <option value="EVALUATES">Avalia</option>
-          <option value="COMMENTS">Comenta</option>
-          <option value="OBSERVES">Observa</option>
-        </select>
+        <Select value={filters.role || '__all'} onValueChange={(value) => handleChange('role', value === '__all' ? '' : value)}>
+          <SelectTrigger id="role" className="h-10 w-full mt-1">
+            <SelectValue placeholder="Todos" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">Todos</SelectItem>
+            <SelectItem value="RESPONSIBLE">Responsável</SelectItem>
+            <SelectItem value="EXECUTOR">Executor</SelectItem>
+            <SelectItem value="TEAM">Equipe</SelectItem>
+            <SelectItem value="VALIDATES">Valida</SelectItem>
+            <SelectItem value="EVALUATES">Avalia</SelectItem>
+            <SelectItem value="COMMENTS">Comenta</SelectItem>
+            <SelectItem value="OBSERVES">Observa</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Pessoa */}
       <div>
         <Label htmlFor="member">Pessoa</Label>
-        <select
-          id="member"
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          value={filters.memberId}
-          onChange={(e) => handleChange('memberId', e.target.value)}
-        >
-          <option value="">Todas</option>
-          {members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name}
-            </option>
-          ))}
-        </select>
+        <Select value={filters.memberId || '__all'} onValueChange={(value) => handleChange('memberId', value === '__all' ? '' : value)}>
+          <SelectTrigger id="member" className="h-10 w-full mt-1">
+            <SelectValue placeholder="Todas" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">Todas</SelectItem>
+            {members.map((member) => (
+              <SelectItem key={member.id} value={String(member.id)}>
+                {member.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <Button onClick={handleApply} className="w-full">
