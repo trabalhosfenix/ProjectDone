@@ -3,8 +3,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { createIssue, updateIssue } from '@/app/actions/issues'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
@@ -139,6 +141,7 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
         </Label>
         <Input
           id="title"
+          className="h-10"
           value={formData.title}
           onChange={(e) => handleChange('title', e.target.value)}
           placeholder="Descreva brevemente a questão"
@@ -149,16 +152,14 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
        {/* Responsáveis */}
        {members.length > 0 && (
           <div>
-            <Label>Responsáveis</Label>
+            <Label className="mb-1.5 inline-block">Responsáveis</Label>
             <div className="border rounded-md p-3 max-h-40 overflow-y-auto space-y-2 mt-1">
                 {members.map(m => (
                     <div key={m.id} className="flex items-center gap-2">
-                        <input 
-                            type="checkbox" 
-                            id={`member-${m.userId}`}
-                            checked={formData.memberIds.includes(m.userId)}
-                            onChange={() => toggleMember(m.userId)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        <Checkbox
+                          id={`member-${m.userId}`}
+                          checked={formData.memberIds.includes(m.userId)}
+                          onCheckedChange={() => toggleMember(m.userId)}
                         />
                         <label htmlFor={`member-${m.userId}`} className="text-sm text-gray-700 cursor-pointer select-none">
                             {m.user?.name || m.user?.email}
@@ -176,6 +177,7 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
           <Label htmlFor="code">Código 1</Label>
           <Input
             id="code"
+            className="h-10"
             value={formData.code}
             onChange={(e) => handleChange('code', e.target.value)}
             placeholder="Ex: Q-001"
@@ -185,6 +187,7 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
           <Label htmlFor="code2">Código 2</Label>
           <Input
             id="code2"
+            className="h-10"
             value={formData.code2}
             onChange={(e) => handleChange('code2', e.target.value)}
             placeholder="Ex: EXT-001"
@@ -198,7 +201,7 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
           <Label htmlFor="type">Tipo</Label>
           <select
             id="type"
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
             value={formData.type}
             onChange={(e) => handleChange('type', e.target.value)}
           >
@@ -210,7 +213,7 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
           <Label htmlFor="priority">Prioridade</Label>
           <select
             id="priority"
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
             value={formData.priority}
             onChange={(e) => handleChange('priority', e.target.value)}
           >
@@ -226,7 +229,7 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
         <Label htmlFor="statusId">Situação</Label>
         <select
           id="statusId"
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
           value={formData.statusId}
           onChange={(e) => handleChange('statusId', e.target.value)}
         >
@@ -246,6 +249,7 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
           <Input
             id="plannedStart"
             type="date"
+            className="h-10"
             value={formData.plannedStart}
             onChange={(e) => handleChange('plannedStart', e.target.value)}
           />
@@ -255,6 +259,7 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
           <Input
             id="plannedEnd"
             type="date"
+            className="h-10"
             value={formData.plannedEnd}
             onChange={(e) => handleChange('plannedEnd', e.target.value)}
           />
@@ -268,6 +273,7 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
             <Input
               id="actualStart"
               type="date"
+              className="h-10"
               value={formData.actualStart}
               onChange={(e) => handleChange('actualStart', e.target.value)}
             />
@@ -277,6 +283,7 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
             <Input
               id="actualEnd"
               type="date"
+              className="h-10"
               value={formData.actualEnd}
               onChange={(e) => handleChange('actualEnd', e.target.value)}
             />
@@ -286,9 +293,9 @@ export function IssueForm({ projectId, userId, statuses, members = [], issue, mo
 
       <div>
         <Label htmlFor="description">Descrição</Label>
-        <textarea
+        <Textarea
           id="description"
-          className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
+          className="min-h-[120px] resize-none"
           value={formData.description}
           onChange={(e) => handleChange('description', e.target.value)}
           placeholder="Descreva detalhadamente a questão..."

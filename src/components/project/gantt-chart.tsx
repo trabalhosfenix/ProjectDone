@@ -2,6 +2,7 @@
 
 import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import Gantt from 'frappe-gantt'
+import { getFrappeGanttTemplate, type FrappeTemplateDensity, type FrappeTemplateMode } from './frappe-gantt-template'
 
 interface GanttTask {
   id: string
@@ -20,10 +21,14 @@ interface GanttChartProps {
   onTaskClick?: (task: GanttTask) => void
   onDateChange?: (task: GanttTask, start: Date, end: Date) => void
   onProgressChange?: (task: GanttTask, progress: number) => void
+  onScrollTopChange?: (scrollTop: number) => void
+  syncedScrollTop?: number
   viewMode?: 'Day' | 'Week' | 'Month' | 'Year'
   theme?: 'light' | 'dark'
   barHeight?: number
   padding?: number
+  templateMode?: FrappeTemplateMode
+  density?: FrappeTemplateDensity
 }
 
 export function GanttChart({
@@ -31,10 +36,14 @@ export function GanttChart({
   onTaskClick,
   onDateChange,
   onProgressChange,
+  onScrollTopChange,
+  syncedScrollTop,
   viewMode = 'Week',
   theme = 'light',
-  barHeight = 20,
-  padding = 18,
+  barHeight,
+  padding,
+  templateMode = 'default',
+  density = 'comfortable',
 }: GanttChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -90,16 +99,12 @@ export function GanttChart({
     [tasks]
   )
 
-  const columnWidth = useMemo(() => {
-    const widths = {
-      Day: 36,
-      Week: 48,
-      Month: 120,
-      Year: 220,
-    } as const
+  const template = useMemo(() => getFrappeGanttTemplate(templateMode, density), [templateMode, density])
 
-    return widths[viewMode] ?? widths.Week
-  }, [viewMode])
+  const resolvedBarHeight = barHeight ?? template.barHeight
+  const resolvedPadding = padding ?? template.padding
+
+  const columnWidth = useMemo(() => template.columnWidth[viewMode] ?? template.columnWidth.Week, [template, viewMode])
 
   useEffect(() => {
     setIsClient(true)
@@ -114,8 +119,8 @@ export function GanttChart({
 
     try {
       ganttRef.current = new Gantt(containerRef.current, formattedTasks, {
-        bar_height: barHeight,
-        padding,
+        bar_height: resolvedBarHeight,
+        padding: resolvedPadding,
         column_width: columnWidth,
         view_mode: viewMode,
         date_format: 'YYYY-MM-DD',
@@ -151,7 +156,7 @@ export function GanttChart({
         containerRef.current.innerHTML = ''
       }
     }
-  }, [isClient, formattedTasks, viewMode, barHeight, padding, columnWidth, onTaskClick, onDateChange, onProgressChange])
+  }, [isClient, formattedTasks, viewMode, resolvedBarHeight, resolvedPadding, columnWidth, onTaskClick, onDateChange, onProgressChange])
 
   useEffect(() => {
     if (ganttRef.current && viewMode) {
@@ -162,6 +167,13 @@ export function GanttChart({
       }
     }
   }, [viewMode])
+
+  useEffect(() => {
+    if (!scrollRef.current || typeof syncedScrollTop !== 'number') return
+    const currentTop = scrollRef.current.scrollTop
+    if (Math.abs(currentTop - syncedScrollTop) <= 1) return
+    scrollRef.current.scrollTop = syncedScrollTop
+  }, [syncedScrollTop])
 
   const startDragToScroll = (event: MouseEvent<HTMLDivElement>) => {
     if (!scrollRef.current) return
@@ -227,10 +239,11 @@ export function GanttChart({
   }
 
   return (
-    <div className={`gantt-shell h-full ${theme === 'dark' ? 'gantt-theme-dark bg-[#0f1115]' : 'bg-white'}`}>
+    <div className={`${template.shellClassName} ${theme === 'dark' ? 'gantt-theme-dark bg-[#0f1115]' : 'bg-white'}`}>
       <div
         ref={scrollRef}
         className="gantt-container h-full overflow-auto cursor-grab"
+        onScroll={(event) => onScrollTopChange?.(event.currentTarget.scrollTop)}
         onMouseDown={startDragToScroll}
         onMouseMove={moveDragToScroll}
         onMouseUp={endDragToScroll}
