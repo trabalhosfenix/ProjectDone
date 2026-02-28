@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const fs = require('fs')
+const { execSync } = require('child_process')
 
 function readJson(path) {
   return JSON.parse(fs.readFileSync(path, 'utf8'))
@@ -46,7 +47,21 @@ try {
     process.exit(1)
   }
 
-  console.log('✅ package.json e package-lock.json estão sincronizados (chaves de dependência).')
+  try {
+    execSync('npm ls --package-lock-only --omit=optional --depth=0', {
+      stdio: 'pipe',
+      encoding: 'utf8',
+    })
+  } catch (error) {
+    console.error('❌ package-lock.json inconsistente para resolução de dependências.')
+    const npmOutput = [error.stdout, error.stderr].filter(Boolean).join('\n').trim()
+    if (npmOutput) {
+      console.error(npmOutput)
+    }
+    process.exit(1)
+  }
+
+  console.log('✅ package.json e package-lock.json estão sincronizados e resolvíveis.')
 } catch (error) {
   console.error('❌ Falha ao validar lockfile:', error.message)
   process.exit(1)

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
-import path from 'path'
 import { AccessError, requireAuth } from '@/lib/access-control'
+import { resolveUploadPath } from '@/lib/upload-path'
 
 export async function GET(
   request: NextRequest,
@@ -28,8 +28,10 @@ export async function GET(
            return new NextResponse('Nome do arquivo invalido', { status: 400 })
       }
 
-      // Caminho real
-      const filePath = path.join(process.cwd(), 'public', 'uploads', filename)
+      const filePath = resolveUploadPath(filename)
+      if (!filePath) {
+        return new NextResponse('Nome do arquivo invalido', { status: 400 })
+      }
 
       if (!fs.existsSync(filePath)) {
          return new NextResponse(`Arquivo nao encontrado no servidor: ${filename}`, { status: 404 })
