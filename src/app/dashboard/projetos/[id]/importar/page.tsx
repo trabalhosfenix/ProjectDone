@@ -14,6 +14,7 @@ import { Progress } from '@/components/ui/progress'
 import { ProjectPageHeader } from '@/components/project/project-page-header'
 
 type ImportStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'error'
+type ImportPhase = 'mpp_upload' | 'mpp_processing' | 'local_sync'
 
 function getProjectNameHintFromFileName(fileName: string): string | undefined {
   if (!fileName) return undefined
@@ -38,10 +39,17 @@ function extractProjectId(payload: Record<string, unknown>) {
 
 function normalizeStatus(value: unknown): ImportStatus {
   const status = String(value || '').toLowerCase()
-  if (['completed', 'success', 'done', 'finished'].includes(status)) return 'completed'
+  if (['completed', 'success', 'done', 'finished', 'synced'].includes(status)) return 'completed'
   if (['failed', 'error', 'canceled'].includes(status)) return 'error'
   if (['processing', 'running', 'in_progress', 'queued', 'pending'].includes(status)) return 'processing'
   return 'processing'
+}
+
+function mapProgressByPhase(phase: ImportPhase, value: number) {
+  const safe = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0
+  if (phase === 'mpp_upload') return Math.max(5, Math.min(20, safe))
+  if (phase === 'mpp_processing') return Math.max(20, Math.min(75, Math.round(20 + safe * 0.55)))
+  return Math.max(75, Math.min(100, Math.round(75 + safe * 0.25)))
 }
 
 export default function ImportarPage() {
@@ -59,6 +67,7 @@ export default function ImportarPage() {
   const [fileName, setFileName] = useState('')
   const [resolvedMppProjectId, setResolvedMppProjectId] = useState<string | null>(null)
   const [syncMode, setSyncMode] = useState<'append' | 'upsert' | 'replace'>('upsert')
+  const [phase, setPhase] = useState<ImportPhase>('mpp_upload')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const persistMppLink = (legacyProjectId: string, mppProjectId: string) => {
@@ -105,6 +114,40 @@ export default function ImportarPage() {
     }
   }
 
+  const pollSyncJob = async (syncJobId: string, targetMppProjectId: string) => {
+    const timeoutAt = Date.now() + 20 * 60_000
+
+    while (Date.now() < timeoutAt) {
+      const response = await fetch(`/api/projects/imports/${syncJobId}`, { cache: 'no-store' })
+      const data = await response.json()
+
+      const nextStatus = normalizeStatus(data.status)
+      const nextProgress = Number(data.progress || 0)
+
+      setStatus(nextStatus)
+      setProgress(mapProgressByPhase('local_sync', nextProgress))
+      setMessage(data.message || 'Sincronizando dados no projeto local...')
+
+      if (nextStatus === 'completed') {
+        toast.success('Importação e sincronização concluídas com sucesso!')
+        const localProjectId = String(data.projectId || projectId)
+        router.push(`/dashboard/projetos/${localProjectId}/gantt?mppProjectId=${targetMppProjectId}`)
+        return
+      }
+
+      if (nextStatus === 'error') {
+        toast.error(data.error || data.message || 'Falha ao sincronizar projeto importado com base local')
+        return
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+    }
+
+    setStatus('error')
+    setMessage('Tempo limite da sincronização excedido.')
+    toast.error('Tempo limite da sincronização excedido')
+  }
+
   const pollJob = async (id: string) => {
     const timeoutAt = Date.now() + 10 * 60_000
 
@@ -112,19 +155,24 @@ export default function ImportarPage() {
       const response = await fetch(`/api/mpp/jobs/${id}`, { cache: 'no-store' })
       const data = await response.json()
       const nextStatus = normalizeStatus(data.status)
+      const nextProgress = Number(data.progress || data.percent || 0)
       setStatus(nextStatus)
-      setProgress(Number(data.progress || data.percent || 0))
+      setProgress(mapProgressByPhase('mpp_processing', nextProgress))
       setMessage(data.message || data.error || '')
 
-      const resolvedProjectId = extractProjectId(data as Record<string, unknown>)
-      if (resolvedProjectId) {
-        setResolvedMppProjectId(String(resolvedProjectId))
-        persistMppLink(projectId, String(resolvedProjectId))
+      const extractedProjectId = extractProjectId(data as Record<string, unknown>)
+      if (extractedProjectId) {
+        setResolvedMppProjectId(String(extractedProjectId))
+        persistMppLink(projectId, String(extractedProjectId))
       }
 
       if (nextStatus === 'completed') {
-        toast.success('Importação concluída com sucesso!')
-        const targetMppProjectId = resolvedProjectId || resolvedMppProjectId || projectId
+        setPhase('local_sync')
+        setStatus('processing')
+        setProgress(mapProgressByPhase('local_sync', 5))
+        setMessage('Arquivo importado. Iniciando sincronização das tarefas no projeto local...')
+
+        const targetMppProjectId = extractedProjectId || resolvedMppProjectId || projectId
         const syncResponse = await fetch('/api/mpp/sync-project', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -137,13 +185,14 @@ export default function ImportarPage() {
         })
         const syncResult = await syncResponse.json()
 
-        if (!syncResponse.ok || !syncResult.success) {
-          toast.error(syncResult.error || 'Falha ao sincronizar projeto importado com base local')
+        if (!syncResponse.ok || !syncResult.success || !syncResult.syncJobId) {
+          toast.error(syncResult.error || 'Falha ao iniciar sincronização do projeto importado')
+          setStatus('error')
+          setMessage(syncResult.error || 'Falha ao iniciar sincronização')
           return
         }
 
-        const localProjectId = String(syncResult.localProjectId || projectId)
-        router.push(`/dashboard/projetos/${localProjectId}/gantt?mppProjectId=${targetMppProjectId}`)
+        await pollSyncJob(String(syncResult.syncJobId), String(syncResult.mppProjectId || targetMppProjectId))
         return
       }
 
@@ -172,7 +221,9 @@ export default function ImportarPage() {
     setFileName(file.name)
 
     try {
+      setPhase('mpp_upload')
       setStatus('uploading')
+      setProgress(mapProgressByPhase('mpp_upload', 10))
       setMessage('Enviando arquivo para processamento...')
       const formData = new FormData()
       formData.append('file', file)
@@ -189,12 +240,15 @@ export default function ImportarPage() {
       }
 
       setJobId(String(data.job_id || data.jobId))
-      const resolvedProjectId = extractProjectId(data as Record<string, unknown>)
-      if (resolvedProjectId) {
-        setResolvedMppProjectId(String(resolvedProjectId))
-        persistMppLink(projectId, String(resolvedProjectId))
+      const extractedProjectId = extractProjectId(data as Record<string, unknown>)
+      if (extractedProjectId) {
+        setResolvedMppProjectId(String(extractedProjectId))
+        persistMppLink(projectId, String(extractedProjectId))
       }
+
+      setPhase('mpp_processing')
       setStatus('processing')
+      setProgress(mapProgressByPhase('mpp_processing', 5))
       setMessage('Processando arquivo no backend...')
       await pollJob(String(data.job_id || data.jobId))
     } catch (error) {
@@ -271,6 +325,11 @@ export default function ImportarPage() {
                 {!!jobId && <p className="text-xs text-gray-500"><strong>Job ID:</strong> {jobId}</p>}
                 {!!message && <p className="text-sm text-gray-700">{message}</p>}
                 {(status === 'uploading' || status === 'processing') && <Progress value={Math.max(0, Math.min(100, progress))} className="h-2" />}
+                {(status === 'uploading' || status === 'processing') && (
+                  <p className="text-xs text-gray-500">
+                    Etapa: {phase === 'mpp_upload' ? 'Upload' : phase === 'mpp_processing' ? 'Importação MPP' : 'Sincronização local'}
+                  </p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
