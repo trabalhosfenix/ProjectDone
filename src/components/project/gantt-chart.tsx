@@ -2,6 +2,7 @@
 
 import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import Gantt from 'frappe-gantt'
+import { getFrappeGanttTemplate, type FrappeTemplateDensity, type FrappeTemplateMode } from './frappe-gantt-template'
 
 interface GanttTask {
   id: string
@@ -26,6 +27,8 @@ interface GanttChartProps {
   theme?: 'light' | 'dark'
   barHeight?: number
   padding?: number
+  templateMode?: FrappeTemplateMode
+  density?: FrappeTemplateDensity
 }
 
 export function GanttChart({
@@ -37,8 +40,10 @@ export function GanttChart({
   syncedScrollTop,
   viewMode = 'Week',
   theme = 'light',
-  barHeight = 20,
-  padding = 18,
+  barHeight,
+  padding,
+  templateMode = 'default',
+  density = 'comfortable',
 }: GanttChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -94,16 +99,12 @@ export function GanttChart({
     [tasks]
   )
 
-  const columnWidth = useMemo(() => {
-    const widths = {
-      Day: 36,
-      Week: 48,
-      Month: 120,
-      Year: 220,
-    } as const
+  const template = useMemo(() => getFrappeGanttTemplate(templateMode, density), [templateMode, density])
 
-    return widths[viewMode] ?? widths.Week
-  }, [viewMode])
+  const resolvedBarHeight = barHeight ?? template.barHeight
+  const resolvedPadding = padding ?? template.padding
+
+  const columnWidth = useMemo(() => template.columnWidth[viewMode] ?? template.columnWidth.Week, [template, viewMode])
 
   useEffect(() => {
     setIsClient(true)
@@ -118,8 +119,8 @@ export function GanttChart({
 
     try {
       ganttRef.current = new Gantt(containerRef.current, formattedTasks, {
-        bar_height: barHeight,
-        padding,
+        bar_height: resolvedBarHeight,
+        padding: resolvedPadding,
         column_width: columnWidth,
         view_mode: viewMode,
         date_format: 'YYYY-MM-DD',
@@ -155,7 +156,7 @@ export function GanttChart({
         containerRef.current.innerHTML = ''
       }
     }
-  }, [isClient, formattedTasks, viewMode, barHeight, padding, columnWidth, onTaskClick, onDateChange, onProgressChange])
+  }, [isClient, formattedTasks, viewMode, resolvedBarHeight, resolvedPadding, columnWidth, onTaskClick, onDateChange, onProgressChange])
 
   useEffect(() => {
     if (ganttRef.current && viewMode) {
@@ -238,7 +239,7 @@ export function GanttChart({
   }
 
   return (
-    <div className={`gantt-shell h-full ${theme === 'dark' ? 'gantt-theme-dark bg-[#0f1115]' : 'bg-white'}`}>
+    <div className={`${template.shellClassName} ${theme === 'dark' ? 'gantt-theme-dark bg-[#0f1115]' : 'bg-white'}`}>
       <div
         ref={scrollRef}
         className="gantt-container h-full overflow-auto cursor-grab"

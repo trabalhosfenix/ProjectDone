@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { SquarePen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { GanttChart } from './gantt-chart'
+import type { FrappeTemplateDensity, FrappeTemplateMode } from './frappe-gantt-template'
 
 export interface GanttSplitTask {
   id: string
@@ -25,6 +26,8 @@ interface GanttSplitViewProps {
   onProgressChange?: (task: GanttSplitTask, progress: number) => void
   viewMode?: 'Day' | 'Week' | 'Month' | 'Year'
   theme?: 'light' | 'dark'
+  templateMode?: FrappeTemplateMode
+  density?: FrappeTemplateDensity
 }
 
 export function GanttSplitView({
@@ -34,6 +37,8 @@ export function GanttSplitView({
   onProgressChange,
   viewMode = 'Week',
   theme = 'light',
+  templateMode = 'default',
+  density = 'comfortable',
 }: GanttSplitViewProps) {
   const leftRowsRef = useRef<HTMLDivElement>(null)
   const syncingScrollRef = useRef(false)
@@ -154,8 +159,8 @@ export function GanttSplitView({
             onDateChange={onDateChange}
             onProgressChange={onProgressChange}
             onScrollTopChange={syncLeftScroll}
-            barHeight={20}
-            padding={18}
+            templateMode={templateMode}
+            density={density}
           />
         </div>
       </section>

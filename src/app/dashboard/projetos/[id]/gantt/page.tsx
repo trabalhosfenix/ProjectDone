@@ -25,6 +25,8 @@ export default function GanttPage() {
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'Day' | 'Week' | 'Month' | 'Year'>('Week')
   const [ganttTheme, setGanttTheme] = useState<'light' | 'dark'>('light')
+  const [templateMode, setTemplateMode] = useState<'default' | 'executive' | 'planning'>('default')
+  const [density, setDensity] = useState<'compact' | 'comfortable'>('comfortable')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [responsibleFilter, setResponsibleFilter] = useState('all')
@@ -226,6 +228,25 @@ export default function GanttPage() {
                   <SelectItem value="dark">Tema Escuro</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={templateMode} onValueChange={(v: 'default' | 'executive' | 'planning') => setTemplateMode(v)}>
+                <SelectTrigger className="w-[150px] border-0 shadow-none">
+                  <SelectValue placeholder="Template" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Template padrão</SelectItem>
+                  <SelectItem value="executive">Template executivo</SelectItem>
+                  <SelectItem value="planning">Template planejamento</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={density} onValueChange={(v: 'compact' | 'comfortable') => setDensity(v)}>
+                <SelectTrigger className="w-[130px] border-0 shadow-none">
+                  <SelectValue placeholder="Densidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="compact">Compacto</SelectItem>
+                  <SelectItem value="comfortable">Confortável</SelectItem>
+                </SelectContent>
+              </Select>
               <Button onClick={() => { setSelectedTask(null); setIsTaskSheetOpen(true) }}>Nova tarefa</Button>
             </div>
           </div>
@@ -309,6 +330,8 @@ export default function GanttPage() {
                 onTaskEdit={handleTaskClick}
                 onDateChange={handleDateChange}
                 onProgressChange={handleProgressChange}
+                templateMode={templateMode}
+                density={density}
               />
             )}
           </CardContent>
