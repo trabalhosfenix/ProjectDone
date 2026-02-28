@@ -5,6 +5,13 @@ import { useParams } from 'next/navigation'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
+import {
+  FRAPPE_DENSITY_OPTIONS,
+  FRAPPE_TEMPLATE_OPTIONS,
+  type FrappeTemplateDensity,
+  type FrappeTemplateMode,
+  type FrappeViewMode,
+} from '@/components/project/frappe-gantt-template'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
 import { ProjectHorizontalMenu } from '@/components/project/project-horizontal-menu'
 import { Calendar, Filter, Search, Palette } from 'lucide-react'
@@ -15,6 +22,7 @@ import { Badge } from '@/components/ui/badge'
 import { ProjectMppContext } from '@/components/project/project-mpp-context'
 import { Button } from '@/components/ui/button'
 import { TaskEntitySheet } from '@/components/project/task-entity-sheet'
+import { Checkbox } from '@/components/ui/checkbox'
 
 export default function GanttPage() {
   const params = useParams()
@@ -22,8 +30,10 @@ export default function GanttPage() {
   
   const [tasks, setTasks] = useState<GanttSplitTask[]>([])
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<'Day' | 'Week' | 'Month' | 'Year'>('Week')
+  const [viewMode, setViewMode] = useState<FrappeViewMode>('Week')
   const [ganttTheme, setGanttTheme] = useState<'light' | 'dark'>('light')
+  const [templateMode, setTemplateMode] = useState<FrappeTemplateMode>('default')
+  const [density, setDensity] = useState<FrappeTemplateDensity>('comfortable')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [responsibleFilter, setResponsibleFilter] = useState('all')
@@ -136,6 +146,18 @@ export default function GanttPage() {
         throw new Error('Datas inválidas recebidas do gráfico')
       }
 
+      setTasks((prev) =>
+        prev.map((currentTask) =>
+          String(currentTask.id) === String(task.id)
+            ? {
+                ...currentTask,
+                start: parsedStart.toISOString(),
+                end: parsedEnd.toISOString(),
+              }
+            : currentTask
+        )
+      )
+
       await fetch(`/api/projects/${projectId}/items/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -152,6 +174,17 @@ export default function GanttPage() {
 
   const handleProgressChange = async (task: any, progress: number) => {
     try {
+      setTasks((prev) =>
+        prev.map((currentTask) =>
+          String(currentTask.id) === String(task.id)
+            ? {
+                ...currentTask,
+                progress: Math.max(0, Math.min(100, Math.round(progress))),
+              }
+            : currentTask
+        )
+      )
+
       await fetch(`/api/projects/${projectId}/items/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -177,31 +210,57 @@ export default function GanttPage() {
              description="Visualização visual do cronograma do projeto."
              projectId={projectId}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ProjectMppContext projectId={projectId} compact onSynced={loadTasks} />
-            <Select value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
-              <SelectTrigger className="w-[150px]">
-                <Calendar className="w-4 h-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Day">Dia</SelectItem>
-                <SelectItem value="Week">Semana</SelectItem>
-                <SelectItem value="Month">Mês</SelectItem>
-                <SelectItem value="Year">Ano</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button onClick={() => { setSelectedTask(null); setIsTaskSheetOpen(true) }}>Nova tarefa</Button>
-            <Select value={ganttTheme} onValueChange={(v: 'light' | 'dark') => setGanttTheme(v)}>
-              <SelectTrigger className="w-[150px]">
-                <Palette className="w-4 h-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="light">Tema Claro</SelectItem>
-                <SelectItem value="dark">Tema Escuro</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2 rounded-lg border bg-white p-1">
+              <Select value={viewMode} onValueChange={(v: FrappeViewMode) => setViewMode(v)}>
+                <SelectTrigger className="w-[150px] border-0 shadow-none">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Day">Dia</SelectItem>
+                  <SelectItem value="Week">Semana</SelectItem>
+                  <SelectItem value="Month">Mês</SelectItem>
+                  <SelectItem value="Year">Ano</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={ganttTheme} onValueChange={(v: 'light' | 'dark') => setGanttTheme(v)}>
+                <SelectTrigger className="w-[150px] border-0 shadow-none">
+                  <Palette className="w-4 h-4 mr-2" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="light">Tema Claro</SelectItem>
+                  <SelectItem value="dark">Tema Escuro</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={templateMode} onValueChange={(v: FrappeTemplateMode) => setTemplateMode(v)}>
+                <SelectTrigger className="w-[170px] border-0 shadow-none">
+                  <SelectValue placeholder="Template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FRAPPE_TEMPLATE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={density} onValueChange={(v: FrappeTemplateDensity) => setDensity(v)}>
+                <SelectTrigger className="w-[140px] border-0 shadow-none">
+                  <SelectValue placeholder="Densidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FRAPPE_DENSITY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button onClick={() => { setSelectedTask(null); setIsTaskSheetOpen(true) }}>Nova tarefa</Button>
+            </div>
           </div>
         </ProjectPageHeader>
 
@@ -280,16 +339,18 @@ export default function GanttPage() {
                 tasks={visibleTasks}
                 viewMode={viewMode}
                 theme={ganttTheme}
-                onTaskClick={handleTaskClick}
+                onTaskEdit={handleTaskClick}
                 onDateChange={handleDateChange}
                 onProgressChange={handleProgressChange}
+                templateMode={templateMode}
+                density={density}
               />
             )}
           </CardContent>
         </Card>
 
         <div className="mt-4 text-sm text-gray-500 flex items-center gap-2">
-          <input id="hide-summary" type="checkbox" checked={hideSummary} onChange={(e) => setHideSummary(e.target.checked)} />
+          <Checkbox id="hide-summary" checked={hideSummary} onCheckedChange={(value) => setHideSummary(Boolean(value))} />
           <label htmlFor="hide-summary">Ocultar tarefas de resumo para focar nas entregas executáveis</label>
         </div>
         {pageSize !== 'all' && filteredTasks.length > 0 && (
