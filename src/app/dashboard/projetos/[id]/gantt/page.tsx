@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { ProjectMppContext } from '@/components/project/project-mpp-context'
 import { Button } from '@/components/ui/button'
 import { TaskEntitySheet } from '@/components/project/task-entity-sheet'
+import { Checkbox } from '@/components/ui/checkbox'
 
 export default function GanttPage() {
   const params = useParams()
@@ -136,6 +137,18 @@ export default function GanttPage() {
         throw new Error('Datas inválidas recebidas do gráfico')
       }
 
+      setTasks((prev) =>
+        prev.map((currentTask) =>
+          String(currentTask.id) === String(task.id)
+            ? {
+                ...currentTask,
+                start: parsedStart.toISOString(),
+                end: parsedEnd.toISOString(),
+              }
+            : currentTask
+        )
+      )
+
       await fetch(`/api/projects/${projectId}/items/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -152,6 +165,17 @@ export default function GanttPage() {
 
   const handleProgressChange = async (task: any, progress: number) => {
     try {
+      setTasks((prev) =>
+        prev.map((currentTask) =>
+          String(currentTask.id) === String(task.id)
+            ? {
+                ...currentTask,
+                progress: Math.max(0, Math.min(100, Math.round(progress))),
+              }
+            : currentTask
+        )
+      )
+
       await fetch(`/api/projects/${projectId}/items/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -177,31 +201,33 @@ export default function GanttPage() {
              description="Visualização visual do cronograma do projeto."
              projectId={projectId}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ProjectMppContext projectId={projectId} compact onSynced={loadTasks} />
-            <Select value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
-              <SelectTrigger className="w-[150px]">
-                <Calendar className="w-4 h-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Day">Dia</SelectItem>
-                <SelectItem value="Week">Semana</SelectItem>
-                <SelectItem value="Month">Mês</SelectItem>
-                <SelectItem value="Year">Ano</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button onClick={() => { setSelectedTask(null); setIsTaskSheetOpen(true) }}>Nova tarefa</Button>
-            <Select value={ganttTheme} onValueChange={(v: 'light' | 'dark') => setGanttTheme(v)}>
-              <SelectTrigger className="w-[150px]">
-                <Palette className="w-4 h-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="light">Tema Claro</SelectItem>
-                <SelectItem value="dark">Tema Escuro</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2 rounded-lg border bg-white p-1">
+              <Select value={viewMode} onValueChange={(v: any) => setViewMode(v)}>
+                <SelectTrigger className="w-[150px] border-0 shadow-none">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Day">Dia</SelectItem>
+                  <SelectItem value="Week">Semana</SelectItem>
+                  <SelectItem value="Month">Mês</SelectItem>
+                  <SelectItem value="Year">Ano</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={ganttTheme} onValueChange={(v: 'light' | 'dark') => setGanttTheme(v)}>
+                <SelectTrigger className="w-[150px] border-0 shadow-none">
+                  <Palette className="w-4 h-4 mr-2" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="light">Tema Claro</SelectItem>
+                  <SelectItem value="dark">Tema Escuro</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={() => { setSelectedTask(null); setIsTaskSheetOpen(true) }}>Nova tarefa</Button>
+            </div>
           </div>
         </ProjectPageHeader>
 
@@ -280,7 +306,7 @@ export default function GanttPage() {
                 tasks={visibleTasks}
                 viewMode={viewMode}
                 theme={ganttTheme}
-                onTaskClick={handleTaskClick}
+                onTaskEdit={handleTaskClick}
                 onDateChange={handleDateChange}
                 onProgressChange={handleProgressChange}
               />
@@ -289,7 +315,7 @@ export default function GanttPage() {
         </Card>
 
         <div className="mt-4 text-sm text-gray-500 flex items-center gap-2">
-          <input id="hide-summary" type="checkbox" checked={hideSummary} onChange={(e) => setHideSummary(e.target.checked)} />
+          <Checkbox id="hide-summary" checked={hideSummary} onCheckedChange={(value) => setHideSummary(Boolean(value))} />
           <label htmlFor="hide-summary">Ocultar tarefas de resumo para focar nas entregas executáveis</label>
         </div>
         {pageSize !== 'all' && filteredTasks.length > 0 && (
