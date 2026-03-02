@@ -20,6 +20,7 @@
   --g-popup-actions: #ebeff2;
   --g-weekend-highlight-color: #f7f7f7;
 }
+
 html[data-theme="dark"],
 .gantt-theme-dark {
   --g-arrow-color: #e5e5e5;
@@ -43,21 +44,36 @@ html[data-theme="dark"],
   --g-popup-actions: #1a1a1a;
   --g-weekend-highlight-color: #0f0f0f;
 }
+
 .gantt-container {
   line-height: 14.5px;
   position: relative;
   overflow: auto;
   font-size: 12px;
   height: var(--gv-grid-height);
+  max-height: 100%;
   width: 100%;
   border-radius: 8px;
   isolation: isolate;
 }
-.gantt-container .grid-header,
-.gantt-container .upper-header,
-.gantt-container .lower-header {
-  transform: translateY(0) !important;
-}
+
+/*
+ * ⚠️  REMOVIDO: transform: translateY(0) !important em .grid-header,
+ *     .upper-header e .lower-header.
+ *
+ * O frappe-gantt usa translateY() dinâmico para posicionar upper-header e
+ * lower-header dentro do grid-header conforme o scroll acontece. Forçar
+ * translateY(0) em todos os três via !important fazia os dois sub-headers
+ * ficarem empilhados na posição top:0 do grid-header, e o lower-header
+ * "transbordava" para fora do container — aparecendo misturado com as barras
+ * abaixo em vez de ficar dentro do cabeçalho.
+ *
+ * O grid-header em si é sticky (position: sticky; top: 0) e não precisa
+ * de translateY para funcionar. Os sub-headers upper e lower têm seu próprio
+ * posicionamento gerenciado pelo frappe via JS/CSS vars — não devemos
+ * sobrescrever isso.
+ */
+
 .gantt-container .popup-wrapper {
   position: absolute;
   top: 0;
@@ -117,6 +133,13 @@ html[data-theme="dark"],
   left: 0;
   border-bottom: 1px solid var(--g-row-border-color);
   z-index: 1000;
+  /*
+   * overflow: visible é necessário para que o lower-header, cujo translate
+   * o posiciona logo abaixo do upper-header, não seja clipado pelo container
+   * quando a soma das alturas ultrapassa o height calculado por alguma
+   * imprecisão de subpixel.
+   */
+  overflow: visible;
 }
 .gantt-container .lower-text,
 .gantt-container .upper-text {
@@ -305,8 +328,7 @@ html[data-theme="dark"],
   font-family: Helvetica;
   font-size: 13px;
   font-weight: 400;
-  stroke: none; 
-
+  stroke: none;
 }
 .gantt .bar-label.big {
   fill: var(--g-text-dark);
@@ -347,12 +369,3 @@ html[data-theme="dark"],
   transition: fill 0.1s ease;
 }
 
-/* Template presets para reutilização interna sem dependência de bibliotecas externas */
-.gantt-template-executive .gantt .bar-label {
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.gantt-template-planning .gantt .bar-label {
-  font-size: 11px;
-}

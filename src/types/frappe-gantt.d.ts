@@ -7,6 +7,12 @@ declare module 'frappe-gantt' {
     progress: number
     dependencies?: string
     custom_class?: string
+    wbs?: string
+    responsible?: string
+    statusLabel?: string
+    is_summary?: boolean
+    _start?: Date
+    _end?: Date
   }
 
   interface GanttOptions {
@@ -21,10 +27,13 @@ declare module 'frappe-gantt' {
     view_mode?: 'Day' | 'Week' | 'Month' | 'Year'
     date_format?: string
     language?: string
-    custom_popup_html?: (task: any) => string
-    on_click?: (task: any) => void
-    on_date_change?: (task: any, start: Date, end: Date) => void
-    on_progress_change?: (task: any, progress: number) => void
+    infinite_padding?: boolean
+    scroll_to?: 'start' | 'today'
+    lines?: 'none' | 'vertical' | 'horizontal' | 'both'
+    custom_popup_html?: (task: GanttTask) => string
+    on_click?: (task: GanttTask) => void
+    on_date_change?: (task: GanttTask, start: Date, end: Date) => void
+    on_progress_change?: (task: GanttTask, progress: number) => void
     on_view_change?: (mode: string) => void
   }
 

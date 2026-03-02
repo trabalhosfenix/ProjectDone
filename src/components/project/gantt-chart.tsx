@@ -2,7 +2,7 @@
 
 import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
 import Gantt from 'frappe-gantt'
-import { getFrappeGanttTemplate, type FrappeTemplateDensity, type FrappeTemplateMode } from './frappe-gantt-template'
+import { getFrappeGanttTemplate, type FrappeTemplateDensity } from './frappe-gantt-template'
 
 interface GanttTask {
   id: string
@@ -14,6 +14,7 @@ interface GanttTask {
   wbs?: string
   responsible?: string
   statusLabel?: string
+  is_summary?: boolean
 }
 
 interface GanttChartProps {
@@ -27,7 +28,6 @@ interface GanttChartProps {
   theme?: 'light' | 'dark'
   barHeight?: number
   padding?: number
-  templateMode?: FrappeTemplateMode
   density?: FrappeTemplateDensity
 }
 
@@ -42,12 +42,18 @@ export function GanttChart({
   theme = 'light',
   barHeight,
   padding,
-  templateMode = 'default',
   density = 'comfortable',
 }: GanttChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const ganttRef = useRef<any>(null)
+  const taskByIdRef = useRef(new Map<string, GanttTask>())
+  const callbacksRef = useRef({
+    onTaskClick,
+    onDateChange,
+    onProgressChange,
+  })
+  const layoutSignatureRef = useRef<string | null>(null)
   const [isClient, setIsClient] = useState(false)
 
   const dragState = useRef({
@@ -66,6 +72,7 @@ export function GanttChart({
 
   const isValidDate = (value: string) => !Number.isNaN(new Date(value).getTime())
   const formatDateBR = (value: Date) => value.toLocaleDateString('pt-BR')
+  const formatDayNumber = (value: Date) => value.toLocaleDateString('pt-BR', { day: '2-digit' })
 
   const getDurationDays = (start: Date, end: Date) => {
     const dayMs = 24 * 60 * 60 * 1000
@@ -81,6 +88,12 @@ export function GanttChart({
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;')
 
+  const formatWeekHeader = (start: Date) => {
+    const end = new Date(start)
+    end.setDate(start.getDate() + 6)
+    return `${formatDayNumber(start)} - ${formatDayNumber(end)}`
+  }
+
   const formattedTasks = useMemo(
     () =>
       tasks
@@ -95,27 +108,49 @@ export function GanttChart({
           wbs: task.wbs || '',
           responsible: task.responsible || '',
           statusLabel: task.statusLabel || '',
+          is_summary: task.is_summary,
         })),
     [tasks]
   )
 
-  const template = useMemo(() => getFrappeGanttTemplate(templateMode, density), [templateMode, density])
+  const template = useMemo(() => getFrappeGanttTemplate(density), [density])
 
   const resolvedBarHeight = barHeight ?? template.barHeight
   const resolvedPadding = padding ?? template.padding
 
   const columnWidth = useMemo(() => template.columnWidth[viewMode] ?? template.columnWidth.Week, [template, viewMode])
+  const layoutSignature = `${resolvedBarHeight}:${resolvedPadding}`
 
   useEffect(() => {
     setIsClient(true)
   }, [])
 
   useEffect(() => {
+    taskByIdRef.current = new Map(tasks.map((task) => [String(task.id), task]))
+    callbacksRef.current = {
+      onTaskClick,
+      onDateChange,
+      onProgressChange,
+    }
+  }, [tasks, onTaskClick, onDateChange, onProgressChange])
+
+  useEffect(() => {
     if (!isClient || !containerRef.current) return
 
-    containerRef.current.innerHTML = ''
+    if (formattedTasks.length === 0) {
+      containerRef.current.innerHTML = ''
+      ganttRef.current = null
+      layoutSignatureRef.current = null
+      return
+    }
 
-    if (formattedTasks.length === 0) return
+    const shouldRecreate =
+      !ganttRef.current ||
+      layoutSignatureRef.current !== layoutSignature
+
+    if (!shouldRecreate) return
+
+    containerRef.current.innerHTML = ''
 
     try {
       ganttRef.current = new Gantt(containerRef.current, formattedTasks, {
@@ -128,9 +163,11 @@ export function GanttChart({
         infinite_padding: false,
         scroll_to: 'start',
         lines: 'both',
-        on_click: (task: any) => onTaskClick?.(task),
-        on_date_change: (task: any, start: Date, end: Date) => onDateChange?.(task, start, end),
-        on_progress_change: (task: any, progress: number) => onProgressChange?.(task, progress),
+        on_click: (task: any) => callbacksRef.current.onTaskClick?.(taskByIdRef.current.get(String(task.id)) || task),
+        on_date_change: (task: any, start: Date, end: Date) =>
+          callbacksRef.current.onDateChange?.(taskByIdRef.current.get(String(task.id)) || task, start, end),
+        on_progress_change: (task: any, progress: number) =>
+          callbacksRef.current.onProgressChange?.(taskByIdRef.current.get(String(task.id)) || task, progress),
         custom_popup_html: (task: any) => `
           <div class="gantt-popup bg-white shadow-lg rounded-lg p-3 border">
             <h5 class="font-semibold text-gray-900">${escapeHtml(task.name)}</h5>
@@ -147,16 +184,37 @@ export function GanttChart({
           </div>
         `,
       })
+
+      const weekMode = ganttRef.current?.options?.view_modes?.find((mode: any) => mode?.name === 'Week')
+      if (weekMode) {
+        weekMode.lower_text = (date: Date) => formatWeekHeader(date)
+      }
+
+      layoutSignatureRef.current = layoutSignature
     } catch (error) {
       console.error('Erro ao criar Gantt:', error)
     }
+  }, [isClient, formattedTasks, viewMode, resolvedBarHeight, resolvedPadding, columnWidth, layoutSignature])
 
+  useEffect(() => {
     return () => {
       if (containerRef.current) {
         containerRef.current.innerHTML = ''
       }
+      ganttRef.current = null
+      layoutSignatureRef.current = null
     }
-  }, [isClient, formattedTasks, viewMode, resolvedBarHeight, resolvedPadding, columnWidth, onTaskClick, onDateChange, onProgressChange])
+  }, [])
+
+  useEffect(() => {
+    if (!ganttRef.current || formattedTasks.length === 0) return
+
+    try {
+      ganttRef.current.refresh(formattedTasks)
+    } catch (error) {
+      console.error('Erro ao atualizar tarefas do Gantt:', error)
+    }
+  }, [formattedTasks])
 
   useEffect(() => {
     if (ganttRef.current && viewMode) {
@@ -221,15 +279,15 @@ export function GanttChart({
 
   if (!isClient) {
     return (
-      <div className="h-[400px] flex items-center justify-center bg-gray-50 rounded-lg">
+      <div className="h-full min-h-[500px] flex items-center justify-center bg-gray-50 rounded-lg">
         <p className="text-gray-500">Carregando gráfico...</p>
       </div>
     )
   }
 
-  if (tasks.length === 0) {
+  if (formattedTasks.length === 0) {
     return (
-      <div className="h-[400px] flex items-center justify-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+      <div className="h-full min-h-[500px] flex items-center justify-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
         <div className="text-center">
           <p className="text-gray-500">Nenhuma tarefa para exibir no Gantt.</p>
           <p className="text-sm text-gray-400 mt-1">Importe ou crie tarefas no cronograma.</p>
@@ -250,7 +308,7 @@ export function GanttChart({
         onMouseLeave={endDragToScroll}
         onMouseOut={endDragToScroll}
       >
-        <div ref={containerRef} className="min-h-[520px] min-w-full" />
+        <div ref={containerRef} className="min-h-full min-w-full" />
       </div>
 
       {/* <style jsx global>{`

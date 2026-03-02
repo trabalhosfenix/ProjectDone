@@ -1,15 +1,13 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GanttSplitView, GanttSplitTask } from '@/components/project/gantt-split-view'
 import {
   FRAPPE_DENSITY_OPTIONS,
-  FRAPPE_TEMPLATE_OPTIONS,
   type FrappeTemplateDensity,
-  type FrappeTemplateMode,
   type FrappeViewMode,
 } from '@/components/project/frappe-gantt-template'
 import { ProjectDetailTabs } from '@/components/project/project-detail-tabs'
@@ -19,10 +17,10 @@ import { toast } from 'sonner'
 import { ProjectPageHeader } from "@/components/project/project-page-header"
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { ProjectMppContext } from '@/components/project/project-mpp-context'
 import { Button } from '@/components/ui/button'
 import { TaskEntitySheet } from '@/components/project/task-entity-sheet'
 import { Checkbox } from '@/components/ui/checkbox'
+import { MppSyncButton } from '@/components/project/mpp-sync-button'
 
 export default function GanttPage() {
   const params = useParams()
@@ -32,7 +30,6 @@ export default function GanttPage() {
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<FrappeViewMode>('Week')
   const [ganttTheme, setGanttTheme] = useState<'light' | 'dark'>('light')
-  const [templateMode, setTemplateMode] = useState<FrappeTemplateMode>('default')
   const [density, setDensity] = useState<FrappeTemplateDensity>('comfortable')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -43,12 +40,7 @@ export default function GanttPage() {
   const [selectedTask, setSelectedTask] = useState<any | null>(null)
   const [isTaskSheetOpen, setIsTaskSheetOpen] = useState(false)
 
-  useEffect(() => {
-    loadTasks()
-  }, [projectId])
-  
-
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     try {
       const res = await fetch(`/api/projects/${projectId}/gantt`, { cache: 'no-store' })
       if (!res.ok) {
@@ -64,7 +56,11 @@ export default function GanttPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [projectId])
+
+  useEffect(() => {
+    void loadTasks()
+  }, [loadTasks])
 
   const statusOf = (task: GanttSplitTask) => {
     if (task.progress >= 100) return 'completed'
@@ -83,7 +79,7 @@ export default function GanttPage() {
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
-      if (hideSummary && (task.wbs === '0' || task.name.toLowerCase().includes('cronograma'))) {
+      if (hideSummary && task.is_summary) {
         return false
       }
 
@@ -139,6 +135,8 @@ export default function GanttPage() {
   }
 
   const handleDateChange = async (task: any, start: unknown, end: unknown) => {
+    const previousTask = tasks.find((currentTask) => String(currentTask.id) === String(task.id))
+
     try {
       const parsedStart = parseGanttDate(start)
       const parsedEnd = parseGanttDate(end)
@@ -158,7 +156,7 @@ export default function GanttPage() {
         )
       )
 
-      await fetch(`/api/projects/${projectId}/items/${task.id}`, {
+      const res = await fetch(`/api/projects/${projectId}/items/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -166,13 +164,28 @@ export default function GanttPage() {
           datePlannedEnd: parsedEnd.toISOString()
         })
       })
+
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`HTTP ${res.status} - ${body}`)
+      }
+
       toast.success('Datas atualizadas!')
     } catch (e) {
+      if (previousTask) {
+        setTasks((prev) =>
+          prev.map((currentTask) =>
+            String(currentTask.id) === String(previousTask.id) ? previousTask : currentTask
+          )
+        )
+      }
       toast.error('Erro ao atualizar datas')
     }
   }
 
   const handleProgressChange = async (task: any, progress: number) => {
+    const previousTask = tasks.find((currentTask) => String(currentTask.id) === String(task.id))
+
     try {
       setTasks((prev) =>
         prev.map((currentTask) =>
@@ -185,7 +198,7 @@ export default function GanttPage() {
         )
       )
 
-      await fetch(`/api/projects/${projectId}/items/${task.id}`, {
+      const res = await fetch(`/api/projects/${projectId}/items/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -193,8 +206,21 @@ export default function GanttPage() {
           status: progress >= 100 ? 'Concluído' : undefined,
         })
       })
+
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`HTTP ${res.status} - ${body}`)
+      }
+
       toast.success('Progresso atualizado!')
     } catch (e) {
+      if (previousTask) {
+        setTasks((prev) =>
+          prev.map((currentTask) =>
+            String(currentTask.id) === String(previousTask.id) ? previousTask : currentTask
+          )
+        )
+      }
       toast.error('Erro ao atualizar progresso')
     }
   }
@@ -210,12 +236,19 @@ export default function GanttPage() {
              description="Visualização visual do cronograma do projeto."
              projectId={projectId}
         >
-          <div className="flex flex-wrap items-center gap-2">
-            <ProjectMppContext projectId={projectId} compact onSynced={loadTasks} />
-            <div className="flex items-center gap-2 rounded-lg border bg-white p-1">
+          <MppSyncButton localProjectId={projectId} onSynced={loadTasks} label="Sincronizar" />
+        </ProjectPageHeader>
+
+        <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <Calendar className="h-3.5 w-3.5" />
+              Visualizacao
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <Select value={viewMode} onValueChange={(v: FrappeViewMode) => setViewMode(v)}>
-                <SelectTrigger className="w-[150px] border-0 shadow-none">
-                  <Calendar className="w-4 h-4 mr-2" />
+                <SelectTrigger size="sm" className="w-full min-w-0">
+                  <Calendar className="w-3.5 h-3.5" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -226,8 +259,8 @@ export default function GanttPage() {
                 </SelectContent>
               </Select>
               <Select value={ganttTheme} onValueChange={(v: 'light' | 'dark') => setGanttTheme(v)}>
-                <SelectTrigger className="w-[150px] border-0 shadow-none">
-                  <Palette className="w-4 h-4 mr-2" />
+                <SelectTrigger size="sm" className="w-full min-w-0">
+                  <Palette className="w-3.5 h-3.5" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -235,20 +268,8 @@ export default function GanttPage() {
                   <SelectItem value="dark">Tema Escuro</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={templateMode} onValueChange={(v: FrappeTemplateMode) => setTemplateMode(v)}>
-                <SelectTrigger className="w-[170px] border-0 shadow-none">
-                  <SelectValue placeholder="Template" />
-                </SelectTrigger>
-                <SelectContent>
-                  {FRAPPE_TEMPLATE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               <Select value={density} onValueChange={(v: FrappeTemplateDensity) => setDensity(v)}>
-                <SelectTrigger className="w-[140px] border-0 shadow-none">
+                <SelectTrigger size="sm" className="w-full min-w-0">
                   <SelectValue placeholder="Densidade" />
                 </SelectTrigger>
                 <SelectContent>
@@ -259,56 +280,73 @@ export default function GanttPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button onClick={() => { setSelectedTask(null); setIsTaskSheetOpen(true) }}>Nova tarefa</Button>
+              <Button
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  setSelectedTask(null)
+                  setIsTaskSheetOpen(true)
+                }}
+              >
+                Nova tarefa
+              </Button>
             </div>
           </div>
-        </ProjectPageHeader>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <Filter className="h-3.5 w-3.5" />
+              Filtros
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="relative sm:col-span-2 xl:col-span-2">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar por nome ou EAP"
+                  className="h-8 pl-8 text-sm"
+                />
+              </div>
+
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger size="sm" className="w-full min-w-0">
+                  <Filter className="w-3.5 h-3.5 text-gray-500" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os status</SelectItem>
+                  <SelectItem value="not_started">Não iniciado</SelectItem>
+                  <SelectItem value="in_progress">Em andamento</SelectItem>
+                  <SelectItem value="late">Atrasado</SelectItem>
+                  <SelectItem value="completed">Concluído</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={responsibleFilter} onValueChange={setResponsibleFilter}>
+                <SelectTrigger size="sm" className="w-full min-w-0">
+                  <SelectValue placeholder="Responsável" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos responsáveis</SelectItem>
+                  {responsibleOptions.map((name) => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
 
         <Card className="shadow-sm border-0 ring-1 ring-gray-200/80">
           <CardHeader>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-3">
               <CardTitle className="text-lg flex items-center gap-2">
                 Cronograma Visual
                 <Badge variant="secondary">{visibleTasks.length} de {filteredTasks.length} tarefas</Badge>
               </CardTitle>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 w-full lg:w-auto">
-                <div className="relative md:col-span-2">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <Input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Buscar por nome ou EAP"
-                    className="pl-9"
-                  />
-                </div>
-
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger>
-                    <Filter className="w-4 h-4 mr-2 text-gray-500" />
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos os status</SelectItem>
-                    <SelectItem value="not_started">Não iniciado</SelectItem>
-                    <SelectItem value="in_progress">Em andamento</SelectItem>
-                    <SelectItem value="late">Atrasado</SelectItem>
-                    <SelectItem value="completed">Concluído</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select value={responsibleFilter} onValueChange={setResponsibleFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Responsável" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos responsáveis</SelectItem>
-                    {responsibleOptions.map((name) => (
-                      <SelectItem key={name} value={name}>{name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr 1fr 1fr] xl:grid-cols-[1fr 1fr 1fr]">
                 <Select
                   value={pageSize}
                   onValueChange={(value: '50' | '100' | '200' | 'all') => {
@@ -316,7 +354,7 @@ export default function GanttPage() {
                     setCurrentPage(1)
                   }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger size="sm" className="w-full min-w-0">
                     <SelectValue placeholder="Linhas" />
                   </SelectTrigger>
                   <SelectContent>
@@ -326,6 +364,41 @@ export default function GanttPage() {
                     <SelectItem value="all">Todas</SelectItem>
                   </SelectContent>
                 </Select>
+
+                <div className="flex h-8 items-center rounded-md border border-gray-200 px-3 text-xs text-gray-600">
+                  <Checkbox id="hide-summary" checked={hideSummary} onCheckedChange={(value) => setHideSummary(Boolean(value))} />
+                  <label htmlFor="hide-summary" className="ml-2 cursor-pointer whitespace-nowrap">
+                    Ocultar resumo
+                  </label>
+                </div>
+
+                {pageSize !== 'all' && filteredTasks.length > 0 && (
+                  <div className="flex h-8 items-center justify-between rounded-md border border-gray-200 px-2.5 text-xs text-gray-500">
+                    <span>
+                      Página {currentPage} de {totalPages}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2"
+                        disabled={currentPage <= 1}
+                        onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      >
+                        Anterior
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2"
+                        disabled={currentPage >= totalPages}
+                        onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                      >
+                        Próxima
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -342,42 +415,11 @@ export default function GanttPage() {
                 onTaskEdit={handleTaskClick}
                 onDateChange={handleDateChange}
                 onProgressChange={handleProgressChange}
-                templateMode={templateMode}
                 density={density}
               />
             )}
           </CardContent>
         </Card>
-
-        <div className="mt-4 text-sm text-gray-500 flex items-center gap-2">
-          <Checkbox id="hide-summary" checked={hideSummary} onCheckedChange={(value) => setHideSummary(Boolean(value))} />
-          <label htmlFor="hide-summary">Ocultar tarefas de resumo para focar nas entregas executáveis</label>
-        </div>
-        {pageSize !== 'all' && filteredTasks.length > 0 && (
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <div className="text-xs text-gray-500">
-              Página {currentPage} de {totalPages}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={currentPage <= 1}
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-              >
-                Anterior
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-              >
-                Próxima
-              </Button>
-            </div>
-          </div>
-        )}
         {pageSize !== 'all' && filteredTasks.length > visibleTasks.length && (
           <div className="mt-2 text-xs text-amber-700">
             Exibindo apenas {visibleTasks.length} tarefas. Ajuste o filtro de linhas para ver todas.
@@ -394,6 +436,7 @@ export default function GanttPage() {
         projectId={projectId}
         task={selectedTask}
         responsibleOptions={responsibleOptions}
+        onSaved={loadTasks}
       />
     </div>
   )

@@ -335,7 +335,7 @@ export async function POST(request: Request) {
           name: projectName,
           code: `MPP-${mppProjectId.slice(0, 8).toUpperCase()}`,
           status: 'EM_ANDAMENTO',
-          type: 'Importado MPP',
+          type: 'MPP',
           description: `Projeto sincronizado da MPP Platform. External ID: ${mppProjectId}`,
           createdById: currentUser.id,
           tenantId: currentUser.tenantId || undefined,

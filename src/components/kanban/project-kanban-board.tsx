@@ -28,7 +28,6 @@ import { createKanbanItem, moveKanbanItem, deleteKanbanItem } from '@/app/action
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Plus, X, Calendar, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { KANBAN_STATUS, normalizeTaskStatus } from '@/lib/task-status'
@@ -77,15 +76,6 @@ function normalizeTaskTitle(value?: string | null) {
   return title || 'Tarefa sem titulo'
 }
 
-function normalizeOriginLabel(value?: string | null) {
-  const key = String(value || '').trim().toUpperCase()
-  if (!key) return 'Manual'
-  if (key === 'KANBAN') return 'Manual'
-  if (key === 'CRONOGRAMA_IMPORT') return 'Importado'
-  if (key === 'MANUAL') return 'Manual'
-  return key
-}
-
 function KanbanDroppableColumn({
   id,
   children,
@@ -123,34 +113,22 @@ function SortableItem({ item, onDelete }: { item: KanbanItem, onDelete: (id: str
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="touch-none select-none">
-       <Card className="group relative mb-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow">
+       <Card className="group relative mb-3 cursor-grab active:cursor-grabbing border-gray-200 hover:shadow-md transition-shadow">
           <CardContent className="p-3">
-             <div className="flex justify-between items-start mb-2">
-                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-600">
-                    {item.id.slice(-4).toUpperCase()}
-                </span>
-                <Badge variant="outline" className="text-[10px] h-5">
-                    {item.priority || 'Média'}
-                </Badge>
-             </div>
-             
-             <p className="font-medium text-sm mb-1 line-clamp-3">{normalizeTaskTitle(item.task)}</p>
+             <p className="font-medium text-sm mb-1 line-clamp-3 pr-7">{normalizeTaskTitle(item.task)}</p>
              {!!item.wbs && (
-               <p className="text-[11px] text-blue-700 mb-1 font-semibold">WBS: {item.wbs}</p>
+               <p className="text-[11px] text-blue-700 mb-1 font-semibold">{item.wbs}</p>
              )}
              {!!item.scenario && (
                <p className="text-xs text-gray-500 mb-2 line-clamp-2 italic">{item.scenario}</p>
              )}
              
-             <div className="flex justify-between items-center text-xs text-gray-500 border-t pt-2 mt-2">
-                 <div className="flex items-center gap-2">
-                     <User className="w-3 h-3" />
-                     {item.responsible || 'Sem resp.'}
-                     <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
-                       {normalizeOriginLabel(item.originSheet)}
-                     </span>
+             <div className="flex justify-between items-center text-[10px] text-gray-500 border-t pt-2 mt-2">
+                 <div className="flex items-center gap-1.5 min-w-0">
+                     <User className="w-3 h-3 shrink-0" />
+                     <span className="truncate">{item.responsible || 'Sem resp.'}</span>
                  </div>
-                 <div className="flex items-center gap-1">
+                 <div className="flex items-center gap-1 shrink-0">
                      <Calendar className="w-3 h-3" />
                      {parseDate(item.datePlannedEnd || item.dateActual)?.toLocaleDateString('pt-BR') || '--/--'}
                  </div>
@@ -361,15 +339,15 @@ export function ProjectKanbanBoard({ projectId, initialItems, responsibleOptions
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
     >
-      <div className="flex gap-4 overflow-x-auto pb-4 h-[calc(100vh-200px)] items-start">
+      <div className="flex gap-4 overflow-x-auto pb-2 h-[calc(100vh-156px)] items-start">
         {COLUMNS.map(col => {
             const colItems = items.filter(i => i.status === col.id)
             return (
-                <div key={col.id} className="min-w-[280px] w-[300px] flex flex-col bg-gray-50 rounded-xl border border-gray-200 h-full max-h-full">
-                    <div className={`p-4 border-b flex justify-between items-center rounded-t-xl bg-white sticky top-0 z-10 ${col.id === 'Concluído' ? 'border-green-200' : ''}`}>
+                <div key={col.id} className="min-w-[290px] w-[320px] flex flex-col bg-white rounded-xl border border-gray-200 h-full max-h-full shadow-sm">
+                    <div className={`px-4 py-3 border-b flex justify-between items-center rounded-t-xl bg-white sticky top-0 z-10 ${col.id === 'Concluído' ? 'border-green-200' : ''}`}>
                         <div className="flex items-center gap-2">
                             <span className="font-semibold text-gray-700">{col.title}</span>
-                            <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-500 hover:bg-gray-200">{colItems.length}</Badge>
+                            <span className="text-xs font-medium text-gray-400">{colItems.length}</span>
                         </div>
                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAddingColumn(col.id)}>
                             <Plus className="w-4 h-4 text-gray-400 hover:text-blue-600" />

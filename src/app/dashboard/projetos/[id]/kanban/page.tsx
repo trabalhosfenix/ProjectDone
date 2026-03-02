@@ -5,7 +5,6 @@ import { ProjectKanbanBoard } from '@/components/kanban/project-kanban-board'
 import { ArrowLeft, Trello } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { ProjectMppContext } from '@/components/project/project-mpp-context'
 
 export default async function ProjectKanbanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -18,8 +17,8 @@ export default async function ProjectKanbanPage({ params }: { params: Promise<{ 
       <ProjectDetailTabs projectId={id} />
       <ProjectHorizontalMenu projectId={id} />
 
-      <div className="flex-1 container mx-auto p-6 max-w-[1400px]">
-        <div className="flex items-center gap-4 mb-6">
+      <div className="flex-1 container mx-auto px-6 py-4 max-w-[1480px]">
+        <div className="flex items-center gap-4 mb-4">
           <Link href={`/dashboard/projetos/${id}`}>
             <Button variant="ghost" size="icon">
               <ArrowLeft className="w-5 h-5" />
@@ -31,9 +30,6 @@ export default async function ProjectKanbanPage({ params }: { params: Promise<{ 
               Quadro Kanban
             </h1>
             <p className="text-gray-500">Gerencie, ajuste e mova tarefas importadas e manuais no fluxo ágil.</p>
-          </div>
-          <div className="ml-auto">
-            <ProjectMppContext projectId={id} compact />
           </div>
         </div>
 

@@ -22,6 +22,10 @@ type RawDependency = {
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
 
+type ParsedPredecessor = {
+  ref: string
+}
+
 const toIsoDate = (value?: Date | null) => {
   if (!value) return null
   const parsed = new Date(value)
@@ -42,6 +46,19 @@ function getProgress(task: RawTask) {
   const isDoneByStatus = statusText.includes('concl') || statusText.includes('done') || statusText.includes('completed')
   const progress = isDoneByStatus ? 100 : normalizedProgress
   return Math.max(0, Math.min(100, progress))
+}
+
+function parsePredecessors(raw: unknown): ParsedPredecessor[] {
+  if (!raw || typeof raw !== 'string') return []
+
+  return raw
+    .split(/[;,]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((token) => {
+      const match = token.match(/^([\w.\-]+)/)
+      return { ref: match?.[1] || token }
+    })
 }
 
 export async function GET(
@@ -83,12 +100,42 @@ export async function GET(
       },
     })
 
-    const predecessorsBySuccessor = links.reduce<Map<string, string[]>>((acc, link: RawDependency) => {
-      const current = acc.get(link.successorItemId) || []
-      current.push(link.predecessorItemId)
+    const predecessorsBySuccessor = links.reduce<Map<string, Set<string>>>((acc, link: RawDependency) => {
+      const current = acc.get(link.successorItemId) || new Set<string>()
+      current.add(link.predecessorItemId)
       acc.set(link.successorItemId, current)
       return acc
     }, new Map())
+
+    const itemById = new Map(sourceTasks.map((item) => [item.id, item]))
+    const itemByWbs = new Map(
+      sourceTasks
+        .filter((item) => item.wbs)
+        .map((item) => [item.wbs as string, item])
+    )
+    const itemByIndex = new Map(sourceTasks.map((item, index) => [String(index + 1), item]))
+
+    sourceTasks.forEach((item) => {
+      const metadata = item.metadata && typeof item.metadata === 'object' ? (item.metadata as Record<string, unknown>) : {}
+      const manualPredecessors = parsePredecessors(metadata.predecessors)
+
+      if (manualPredecessors.length === 0) return
+
+      const current = predecessorsBySuccessor.get(item.id) || new Set<string>()
+
+      manualPredecessors.forEach((predecessor) => {
+        const resolved =
+          itemById.get(predecessor.ref) ||
+          itemByWbs.get(predecessor.ref) ||
+          itemByIndex.get(predecessor.ref)
+
+        if (resolved?.id && resolved.id !== item.id) {
+          current.add(resolved.id)
+        }
+      })
+
+      predecessorsBySuccessor.set(item.id, current)
+    })
 
     const normalized = sourceTasks.map((item) => ({
       id: item.id,
@@ -102,7 +149,7 @@ export async function GET(
       is_summary: Boolean(item.wbs && item.wbs.split('.').length <= 1),
       responsible: item.responsible || undefined,
       statusLabel: item.status || undefined,
-      dependencies: predecessorsBySuccessor.get(item.id) || [],
+      dependencies: Array.from(predecessorsBySuccessor.get(item.id) || []),
     }))
 
     const datedTasks = normalized.filter((item) => item.start && item.end)

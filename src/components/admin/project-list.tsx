@@ -5,33 +5,31 @@ import {
   getProjects,
   createProject,
   updateProject,
-  deleteProject,
   getProjectFilterOptions,
   type ProjectFilters,
 } from "@/app/actions/projects";
 import { getProjectTypes } from "@/app/actions/project-types";
 import { getCalendars } from "@/app/actions/calendars";
-import { 
+import {
   FolderKanban, 
   Plus, 
   Edit, 
-  Trash2, 
   X, 
   Save, 
   Filter, 
   FileSpreadsheet, 
   ArrowLeft,
   Database,
-  RefreshCw,
-  Eye,
   Download,
   FileText,
-  AlertCircle
+  Info,
+  Folder
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
+import { exportProjectToExcel } from "@/lib/project-exporter";
 
 const STATUS_OPTIONS = [
   "A iniciar",
@@ -79,7 +77,6 @@ export function ProjectList() {
   const [typeOptions, setTypeOptions] = useState<string[]>(DEFAULT_TYPES);
   const [calendarOptions, setCalendarOptions] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"all" | "local" | "imported">("all");
-  const [syncingId, setSyncingId] = useState<string | null>(null);
   
   // Filtros
   const [filters, setFilters] = useState<ProjectFilters>({});
@@ -155,50 +152,6 @@ export function ProjectList() {
     const result = await getProjectFilterOptions();
     if (result.success && result.options) {
       setFilterOptions(result.options);
-    }
-  };
-
-  const handleSync = async (project: any) => {
-    const externalUid = project.primaryImported?.externalProjectId || project.primaryImported?.externalUid;
-    if (!externalUid) {
-      toast({
-        title: "Sincronização indisponível",
-        description: "Este projeto não possui vínculo externo para sincronização.",
-        variant: "warning"
-      });
-      return;
-    }
-
-    setSyncingId(project.id);
-    try {
-      const response = await fetch("/api/mpp/sync-project", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mppProjectId: String(externalUid),
-          localProjectId: project.id,
-          syncMode: "upsert",
-        }),
-      });
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        toast({
-          title: "Sucesso",
-          description: `Projeto sincronizado (${result.importedTasks || 0} tarefas atualizadas)`
-        });
-        await loadProjects();
-      } else {
-        throw new Error(result.error || "Falha ao sincronizar");
-      }
-    } catch (error) {
-      toast({
-        title: "Erro na sincronização",
-        description: String(error),
-        variant: "destructive"
-      });
-    } finally {
-      setSyncingId(null);
     }
   };
 
@@ -354,31 +307,6 @@ export function ProjectList() {
     setLoading(false);
   };
 
-  const handleDelete = async (project: any) => {
-    if (!confirm(`Deseja realmente excluir o projeto "${project.name}"?`)) {
-      return;
-    }
-
-    setLoading(true);
-    const result = await deleteProject(project.id);
-    
-    if (result.success) {
-      toast({
-        title: "Sucesso",
-        description: "Projeto excluído com sucesso"
-      });
-      await loadProjects();
-    } else {
-      toast({
-        title: "Erro",
-        description: result.error || "Erro ao excluir projeto",
-        variant: "destructive"
-      });
-    }
-    
-    setLoading(false);
-  };
-
   const applyFilter = (key: keyof ProjectFilters, value: any) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
@@ -387,10 +315,15 @@ export function ProjectList() {
     setFilters({});
   };
 
-  // Função para navegar para detalhes do projeto importado
-  const handleViewImported = (projectId: string, externalUid?: string | null) => {
-    const query = externalUid ? `?mppProjectId=${encodeURIComponent(externalUid)}` : "";
-    window.location.href = `/dashboard/projetos/${projectId}/gantt${query}`;
+  const handleExport = async (project: any) => {
+    const success = await exportProjectToExcel(project.id, project.name || "Projeto");
+    if (!success) {
+      toast({
+        title: "Erro",
+        description: "Não foi possível exportar o projeto em Excel",
+        variant: "destructive"
+      });
+    }
   };
 
   if (loading && view === "list") {
@@ -695,7 +628,7 @@ export function ProjectList() {
 
         <TabsContent value={activeTab} className="mt-6">
           {/* Filtros (compartilhados) */}
-          <div className="bg-white border rounded-lg p-4 mb-6">
+          <div className="bg-white border rounded-lg p-1 mb-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
               <button
                 onClick={() => setShowFilters(!showFilters)}
@@ -776,13 +709,13 @@ export function ProjectList() {
             <table className="w-full min-w-[980px]">
               <thead className="bg-gray-800 text-white">
                 <tr>
-                  <th className="text-left p-4">Projeto</th>
-                  <th className="text-center p-4 w-24">Origem</th>
-                  <th className="text-center p-4 w-32">Status</th>
-                  <th className="text-center p-4 w-32">Tipo</th>
-                  <th className="text-center p-4 w-32">Área</th>
-                  <th className="text-center p-4 w-24">Tarefas</th>
-                  <th className="text-center p-4 w-48">Ações</th>
+                  <th className="text-left p3">Projeto</th>
+                  <th className="text-center p2 w-24">Origem</th>
+                  <th className="text-center p2 w-32">Status</th>
+                  <th className="text-center p2 w-32">Tipo</th>
+                  <th className="text-center p2 w-32">Área</th>
+                  <th className="text-center p2 w-24">Tarefas</th>
+                  <th className="text-center p2 w-32">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -798,7 +731,7 @@ export function ProjectList() {
                       key={`${project.source}-${project.id}`}
                       className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-blue-50 transition-colors`}
                     >
-                      <td className="p-4">
+                      <td className="p2">
                         <div className="flex items-center gap-2">
                           {project.source === 'local' ? (
                             <FolderKanban className="w-4 h-4 text-gray-400" />
@@ -807,10 +740,9 @@ export function ProjectList() {
                           )}
                           <div>
                             <div className="font-medium">{project.name}</div>
-                            <div className="flex items-center gap-2 text-xs">
-                              {project.code && (
-                                <span className="text-gray-500">{project.code}</span>
-                              )}
+                            {/* fonte 10px */}
+                            <div className="flex items-center gap-2 text-xs text-gray-500"> 
+                              
                               {project.hasExternalSource && project.importedAt && (
                                 <span className="text-gray-400">
                                   {new Date(project.importedAt).toLocaleDateString('pt-BR')}
@@ -820,10 +752,10 @@ export function ProjectList() {
                           </div>
                         </div>
                       </td>
-                      <td className="p-4 text-center">
+                      <td className="p2 text-center">
                         {getSourceBadge(project)}
                       </td>
-                      <td className="p-4 text-center">
+                      <td className="p2 text-center">
                         <div className="space-y-1">
                           <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
                             project.status === "Concluído" ? "bg-green-100 text-green-700" :
@@ -840,79 +772,49 @@ export function ProjectList() {
                           )}
                         </div>
                       </td>
-                      <td className="p-4 text-center text-sm">{project.type || "-"}</td>
-                      <td className="p-4 text-center text-sm">{project.area || "-"}</td>
-                      <td className="p-4 text-center">
+                      <td className="p2 text-center text-sm">{project.type || "-"}</td>
+                      <td className="p2 text-center text-sm">{project.area || "-"}</td>
+                      <td className="p2 text-center">
                         <span className="text-blue-600 font-semibold">
                           {project._count?.items ?? project.totalItems ?? project.totalTasks ?? 0}
                         </span>
                       </td>
-                      <td className="p-4">
-                        <div className="flex items-center justify-center gap-2 flex-wrap">
-                          <a
-                            href={`/dashboard/projetos/${project.id}`}
-                            className="flex items-center gap-1 text-green-600 hover:text-green-800 text-sm font-medium hover:underline"
+                      <td className="p2">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-slate-600 hover:text-emerald-700"
+                            title="Detalhes do projeto"
+                            aria-label="Detalhes do projeto"
                           >
-                            <FolderKanban className="w-3 h-3" />
-                            Detalhes
-                          </a>
-                          <button
+                            <a href={`/dashboard/projetos/${project.id}`}>
+                              <Folder className="w-4 h-4" />
+                            </a>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-slate-600 hover:text-blue-700"
+                            title="Editar projeto"
+                            aria-label="Editar projeto"
                             onClick={() => handleEdit(project)}
-                            className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline"
                           >
-                            <Edit className="w-3 h-3" />
-                            Editar
-                          </button>
-                          <button
-                            onClick={() => handleDelete(project)}
-                            disabled={project._count?.items > 0}
-                            className="flex items-center gap-1 text-red-600 hover:text-red-800 text-sm font-medium hover:underline disabled:opacity-30 disabled:cursor-not-allowed"
-                            title={
-                              project._count?.items > 0
-                                ? "Não é possível excluir projeto com tarefas vinculadas"
-                                : "Excluir projeto"
-                            }
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-slate-600 hover:text-violet-700"
+                            title="Exportar projeto em Excel"
+                            aria-label="Exportar projeto em Excel"
+                            onClick={() => handleExport(project)}
                           >
-                            <Trash2 className="w-3 h-3" />
-                            Excluir
-                          </button>
-                          {project.hasExternalSource && (
-                            <>
-                              <button
-                                onClick={() => handleViewImported(project.id, project.externalUid)}
-                                className="flex items-center gap-1 text-green-600 hover:text-green-800 text-sm font-medium hover:underline"
-                              >
-                                <Eye className="w-3 h-3" />
-                                Abrir Gantt
-                              </button>
-                              <button
-                                onClick={() => handleSync(project)}
-                                disabled={syncingId === project.id}
-                                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline disabled:opacity-50"
-                              >
-                                <RefreshCw className={`w-3 h-3 ${syncingId === project.id ? 'animate-spin' : ''}`} />
-                                {syncingId === project.id ? 'Sinc...' : 'Sincronizar'}
-                              </button>
-                              <button
-                                onClick={() => {
-                                  if (!project.externalUid) {
-                                    toast({
-                                      title: "Exportação indisponível",
-                                      description: "Este projeto não possui identificador externo para exportação.",
-                                      variant: "warning"
-                                    });
-                                    return;
-                                  }
-
-                                  window.open(`/api/mpp/projects/${project.externalUid}/export/json`, '_blank');
-                                }}
-                                className="flex items-center gap-1 text-purple-600 hover:text-purple-800 text-sm font-medium hover:underline"
-                              >
-                                <Download className="w-3 h-3" />
-                                Exportar
-                              </button>
-                            </>
-                          )}
+                            <Download className="w-4 h-4" />
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -933,13 +835,6 @@ export function ProjectList() {
                 </span>
               )}
             </div>
-            
-            {activeTab === 'imported' && projects.some((p) => Boolean(p.importedProjects?.[0]?.externalProjectId || p.importedProjects?.[0]?.externalUid)) && (
-              <div className="flex items-center gap-2 text-xs bg-blue-50 p-2 rounded">
-                <AlertCircle className="w-4 h-4 text-blue-500" />
-                <span>Clique em "Sincronizar" para integrar com o módulo de issues/riscos</span>
-              </div>
-            )}
           </div>
         </TabsContent>
       </Tabs>

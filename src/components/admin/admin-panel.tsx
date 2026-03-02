@@ -149,7 +149,7 @@ export default function AdminPanel({ initialItems, stats, curvaSData, recentActi
       )}
     >
 
-      <div className="p-4 md:p-10 font-montserrat" style={{ zoom: fontScale }}>
+      <div className="p-2 md:p-5 font-montserrat" style={{ zoom: fontScale }}>
         {activeTab === "dashboard" && (
 
           <div className="space-y-10">

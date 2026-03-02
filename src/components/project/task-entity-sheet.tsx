@@ -16,6 +16,7 @@ interface TaskEntitySheetProps {
   projectId: string
   task?: any | null
   responsibleOptions?: string[]
+  onSaved?: () => void | Promise<void>
 }
 
 type TaskForm = {
@@ -38,7 +39,7 @@ function toDateInput(value?: string | Date | null) {
   return date.toISOString().slice(0, 10)
 }
 
-export function TaskEntitySheet({ open, onOpenChange, projectId, task, responsibleOptions = [] }: TaskEntitySheetProps) {
+export function TaskEntitySheet({ open, onOpenChange, projectId, task, responsibleOptions = [], onSaved }: TaskEntitySheetProps) {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const isCreate = !task?.id
@@ -97,6 +98,7 @@ export function TaskEntitySheet({ open, onOpenChange, projectId, task, responsib
         }
         toast.success('Tarefa criada com sucesso')
         onOpenChange(false)
+        await onSaved?.()
         return
       }
 
@@ -118,6 +120,7 @@ export function TaskEntitySheet({ open, onOpenChange, projectId, task, responsib
 
       toast.success('Tarefa atualizada')
       onOpenChange(false)
+      await onSaved?.()
     } finally {
       setSaving(false)
     }
@@ -134,6 +137,7 @@ export function TaskEntitySheet({ open, onOpenChange, projectId, task, responsib
       }
       toast.success('Tarefa excluída')
       onOpenChange(false)
+      await onSaved?.()
     } finally {
       setDeleting(false)
     }
@@ -141,7 +145,7 @@ export function TaskEntitySheet({ open, onOpenChange, projectId, task, responsib
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-[640px] overflow-y-auto">
+      <SheetContent className="sm:max-w-160 overflow-y-auto p-5">
         <SheetHeader>
           <SheetTitle>{isCreate ? 'Nova tarefa' : 'Entidade da tarefa'}</SheetTitle>
           <SheetDescription>

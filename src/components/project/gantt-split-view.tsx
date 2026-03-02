@@ -5,7 +5,7 @@ import { format } from 'date-fns'
 import { SquarePen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { GanttChart } from './gantt-chart'
-import type { FrappeTemplateDensity, FrappeTemplateMode } from './frappe-gantt-template'
+import type { FrappeTemplateDensity } from './frappe-gantt-template'
 
 export interface GanttSplitTask {
   id: string
@@ -17,6 +17,7 @@ export interface GanttSplitTask {
   wbs?: string
   responsible?: string
   statusLabel?: string
+  is_summary?: boolean
 }
 
 interface GanttSplitViewProps {
@@ -26,7 +27,6 @@ interface GanttSplitViewProps {
   onProgressChange?: (task: GanttSplitTask, progress: number) => void
   viewMode?: 'Day' | 'Week' | 'Month' | 'Year'
   theme?: 'light' | 'dark'
-  templateMode?: FrappeTemplateMode
   density?: FrappeTemplateDensity
 }
 
@@ -37,7 +37,6 @@ export function GanttSplitView({
   onProgressChange,
   viewMode = 'Week',
   theme = 'light',
-  templateMode = 'default',
   density = 'comfortable',
 }: GanttSplitViewProps) {
   const leftRowsRef = useRef<HTMLDivElement>(null)
@@ -93,9 +92,9 @@ export function GanttSplitView({
   }
 
   return (
-    <div className={`flex h-full min-h-[620px] overflow-hidden rounded-xl border shadow-sm ${dark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+    <div className={`flex h-[500px] max-h-[500px] min-h-0 overflow-hidden rounded-xl border shadow-sm ${dark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}>
       <aside className={`flex w-[55%] shrink-0 flex-col border-r ${dark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}>
-        <div className={`grid h-[58px] grid-cols-[72px_minmax(0,1fr)_124px_84px_84px_56px_116px_54px] items-center border-b px-2 text-[11px] font-semibold uppercase tracking-wide ${dark ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+        <div className={`grid h-[85px] grid-cols-[72px_minmax(0,1fr)_124px_84px_84px_56px_116px_54px] items-center border-b px-2 text-[11px] font-semibold uppercase tracking-wide ${dark ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
           <span className="px-2">EAP</span>
           <span className="px-2">Atividade</span>
           <span className="px-2">Responsável</span>
@@ -151,15 +150,15 @@ export function GanttSplitView({
       </aside>
 
       <section className={`flex min-w-0 flex-1 flex-col ${dark ? 'bg-slate-900' : 'bg-white'}`}>
-        <div className="h-full min-h-[620px]">
+        <div className="h-full min-h-0">
           <GanttChart
             tasks={tasks}
             viewMode={viewMode}
             theme={theme}
+            onTaskClick={onTaskEdit}
             onDateChange={onDateChange}
             onProgressChange={onProgressChange}
             onScrollTopChange={syncLeftScroll}
-            templateMode={templateMode}
             density={density}
           />
         </div>
